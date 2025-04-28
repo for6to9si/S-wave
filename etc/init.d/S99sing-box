@@ -161,6 +161,37 @@ del_ip_rules() {
   fi
 }
 
+backup_config_sing_box() {
+
+    SOURCE_DIR="$(echo "$js_SETTING" | jq -r '.client.path_config')"
+    BACKUP_BASE_DIR="/opt/backups/sing-box"
+    TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
+    BACKUP_DIR="${BACKUP_BASE_DIR}/${TIMESTAMP}"
+
+    # Проверяем существование базовой директории
+    if [ ! -d "$BACKUP_BASE_DIR" ]; then
+        echo "Директория $BACKUP_BASE_DIR не существует."
+        echo -n "Хотите создать её? (y/n): "
+        read answer
+        if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
+            mkdir -p "$BACKUP_BASE_DIR"
+            echo "Директория создана: $BACKUP_BASE_DIR"
+        else
+            echo "Операция отменена пользователем."
+            return 1
+        fi
+    fi
+
+    # Создаём папку для нового бэкапа
+    mkdir -p "$BACKUP_DIR"
+
+    # Копируем файлы
+    cp -r "$SOURCE_DIR/"* "$BACKUP_DIR/"
+
+    echo "Бэкап успешно создан в: $BACKUP_DIR"
+}
+
+
 IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
 
 # Менеджер команд
@@ -199,6 +230,9 @@ status)
 		echo -e "  Прокси-клиент ${color_red}не запущен${color_reset}"
 	fi
     ;;
+backup)
+    backup_config_sing_box
+  ;;
 restart)
     "$0" stop
     "$0" start
