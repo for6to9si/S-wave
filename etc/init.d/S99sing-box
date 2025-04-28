@@ -191,7 +191,6 @@ backup_config_sing_box() {
     echo "Бэкап успешно создан в: $BACKUP_DIR"
 }
 
-
 IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
 
 # Менеджер команд
@@ -212,7 +211,8 @@ start)
         . /opt/etc/ndm/netfilter.d/000-swave.sh
     fi
     export SSL_CERT_DIR=/opt/etc/ssl/certs
-    sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')" &
+    #sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')" 2>> "${LOG_FILE}" &
+    { echo -e "\n=== $(date) ==="; sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"; } >> "${LOG_FILE}" 2>&1 &
     ;;
 stop)
     del_ip_rules 4

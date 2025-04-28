@@ -105,7 +105,9 @@ init_iptables(){
   policy_mark=$(get_policy_mark)
   IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
   port_forwarding_list=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_list | join(",")')
-
+  if echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null; then
+    port_forwarding_list="53,${port_forwarding_list}"
+  fi
   echo "cat ${LOG_FILE}"
   echo "${chain_name}"
   load_kernel_modules
@@ -119,21 +121,36 @@ init_iptables(){
 
     # REDIRECT
     if ! "${family}" -t nat -nL ${chain_name} >/dev/null 2>&1; then
-      "${family}" -w -t nat -N ${chain_name} > "${LOG_FILE}" 2>&1
+      "${family}" -w -t nat -N ${chain_name} >> "${LOG_FILE}" 2>&1
       echo "#REDIRECT ($family)"
-      "${family}" -w -t nat -A ${chain_name} -p tcp -j REDIRECT --to-port "${port_redirect}" > "${LOG_FILE}" 2>&1
-      "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >"${LOG_FILE}" 2>&1
+      "${family}" -w -t nat -A ${chain_name} -p tcp -j REDIRECT --to-port "${port_redirect}" >> "${LOG_FILE}" 2>&1
+      "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >>"${LOG_FILE}" 2>&1
     fi
 
     # TPROXY
     if ! "${family}" -t mangle -nL ${chain_name} >/dev/null 2>&1; then
       "${family}" -w -t mangle -N ${chain_name}
       echo "#TPROXY ($family)"
-      "${family}" -w -t mangle -I ${chain_name} -p udp -m socket --transparent -j MARK --set-mark "${table_mark_hex}" > "${LOG_FILE}" 2>&1
-      "${family}" -w -t mangle -A ${chain_name} -p udp -j TPROXY --on-ip "$loopback_ip" --on-port "${port_tproxy}" --tproxy-mark "${table_mark_hex}" > "${LOG_FILE}" 2>&1
-      "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} > "${LOG_FILE}" 2>&1
-#      "${family}" -w -t mangle -A PREROUTING -m connmark ! --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports 53 -j ${chain_name} > "${LOG_FILE}" 2>&1
+      "${family}" -w -t mangle -I ${chain_name} -p udp -m socket --transparent -j MARK --set-mark "${table_mark_hex}" >> "${LOG_FILE}" 2>&1
+      "${family}" -w -t mangle -A ${chain_name} -p udp -j TPROXY --on-ip "$loopback_ip" --on-port "${port_tproxy}" --tproxy-mark "${table_mark_hex}" >> "${LOG_FILE}" 2>&1
+      "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >> "${LOG_FILE}" 2>&1
+#      "${family}" -w -t mangle -A PREROUTING -m connmark ! --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports 53 -j ${chain_name} >> "${LOG_FILE}" 2>&1
     fi
+
+    #DNS
+    if iptables -t nat    -nL "${chain_name}" >/dev/null 2>&1 \
+    && iptables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
+    && echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null
+    then
+        iptables -w -t nat -A ${chain_name} -d 192.168.0.0/16 -p tcp -m tcp ! --dport 53 -j RETURN
+        iptables -w -t mangle -A ${chain_name} -d 192.168.0.0/16 -p tcp -m tcp --dport 53 -j RETURN
+
+        iptables -w -t mangle -A ${chain_name} -d 192.168.0.0/16 -p udp -m udp ! --dport 53 -j RETURN
+        iptables -w -t nat -A ${chain_name} -d 192.168.0.0/16 -p udp -m udp --dport 53 -j RETURN
+
+        echo "Цепочка ${chain_name} уже существует в nat и mangle"
+    fi
+
     # OUTPUT nat
     if ! "${family}" -t nat -nL ${chain_name_output} >/dev/null 2>&1; then
       "${family}" -w -t nat -N ${chain_name_output}
@@ -218,7 +235,6 @@ add_ipv4tables_exclusions() {
         224.0.0.0/4             # Multicast (групповая рассылка)
         240.0.0.0/4             # Зарезервировано для будущего
     "
-    echo "1"
     # Затем добавляем динамические адреса
     excluded_ips=$(get_exclude_ip4)
     if [ -n "$excluded_ips" ]; then
@@ -226,8 +242,6 @@ add_ipv4tables_exclusions() {
         # Объеденяем все исключения
         $excluded_ips"
     fi
-
-    echo "2"
 
     # Фильтр: удаляем всё, что после '#', затем обрезаем пробелы
     echo "$ipv4_list" | while read -r line; do
@@ -240,7 +254,7 @@ add_ipv4tables_exclusions() {
         for table in mangle nat; do
             # Проверяем, не существует ли правило уже
             if ! iptables -w -t "$table" -C ${chain_name} -d "$ip" -j RETURN >/dev/null 2>&1; then
-                iptables -w -t "$table" -A ${chain_name} -d "$ip" -j RETURN > "${LOG_FILE}" 2>&1
+                iptables -w -t "$table" -A ${chain_name} -d "$ip" -j RETURN >> "${LOG_FILE}" 2>&1
                 echo "[OK] Добавлено исключение: $ip (таблица: $table)"
             else
                 echo "[Пропуск] Правило для $ip уже существует в таблице $table"
@@ -323,7 +337,7 @@ add_ipv6tables_exclusions() {
         for table in mangle nat; do
             # Проверяем, не существует ли правило уже
             if ! ip6tables -w -t "$table" -C ${chain_name} -d "$ip" -j RETURN >/dev/null 2>&1; then
-                ip6tables -w -t "$table" -A ${chain_name} -d "$ip" -j RETURN > "${LOG_FILE}" 2>&1
+                ip6tables -w -t "$table" -A ${chain_name} -d "$ip" -j RETURN >> "${LOG_FILE}" 2>&1
                 echo "[OK] Добавлено исключение: $ip (таблица: $table)"
             else
                 echo "[Пропуск] Правило для $ip уже существует в таблице $table"
