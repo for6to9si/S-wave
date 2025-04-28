@@ -224,11 +224,12 @@ stop)
     busybox killall -q -9 "$(echo "$js_SETTING" | jq -r '.client.name')"
     ;;
 status)
-	if proxy_status; then
-		echo -e "  Прокси-клиент ${color_green}запущен${color_reset}"
-	else
-		echo -e "  Прокси-клиент ${color_red}не запущен${color_reset}"
-	fi
+    name_client=$(echo "$js_SETTING" | jq -r '.client.name')
+    if pgrep -f "${name_client} run" > /dev/null; then
+      echo -e " ${name_client} ${color_green}запущен${color_reset}"
+    else
+      echo -e " ${name_client} ${color_red}отключён${color_reset}"
+    fi
     ;;
 backup)
     backup_config_sing_box
