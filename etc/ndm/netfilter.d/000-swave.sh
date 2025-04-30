@@ -27,7 +27,7 @@ get_clean_json() {
 
 js_SETTING=$(get_clean_json "$SETTING" | jq -c '.' 2>/dev/null)
 
-DEBUG=false
+DEBUG=true
 DEBUG_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
 
 # Функция для отладки
@@ -177,16 +177,24 @@ init_dns_tables(){
 
 #создания цепи и правил
 init_iptables(){
-  chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
-  chain_name_output="${chain_name}"_out
-  table_mark_hex=$(echo "$js_SETTING" | jq -r '.network.table_mark_hex')
-  port_tproxy=$(echo "$js_SETTING" | jq -r '.network.port_tproxy')
-  port_redirect=$(echo "$js_SETTING" | jq -r '.network.port_redirect')
-  policy_mark=$(get_policy_mark)
-  port_forwarding_list=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_list | join(",")')
-  if echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null; then
-    port_forwarding_list="53,${port_forwarding_list}"
-  fi
+    chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+    chain_name_output="${chain_name}"_out
+    table_mark_hex=$(echo "$js_SETTING" | jq -r '.network.table_mark_hex')
+    port_tproxy=$(echo "$js_SETTING" | jq -r '.network.port_tproxy')
+    port_redirect=$(echo "$js_SETTING" | jq -r '.network.port_redirect')
+    policy_mark=$(get_policy_mark)
+    port_list=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_list | join(",")')
+    # Проверяем, если список пуст
+    if [ -z "$port_list" ]; then
+    echo "Ошибка: Нет портов в port_forwarding_list!" >&2
+    exit 1
+    fi
+    if echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null; then
+    port_list="53,${port_list}"
+    fi
+    # Безопасно достаём диапазоны портов или пустой список
+    port_ranges=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_range // [] | .[]')
+
 #  load_kernel_modules
 
   for family in iptables ip6tables; do
@@ -201,7 +209,11 @@ init_iptables(){
       "${family}" -w -t nat -N ${chain_name} >> "${LOG_FILE}" 2>&1
       debug "#REDIRECT ($family)"
       "${family}" -w -t nat -A ${chain_name} -p tcp -j REDIRECT --to-port "${port_redirect}" >> "${LOG_FILE}" 2>&1
-      "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >>"${LOG_FILE}" 2>&1
+      "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_list} -j ${chain_name} >>"${LOG_FILE}" 2>&1
+      echo "$port_ranges" | while read -r range; do
+        [ -n "$range" ] || continue
+        "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp --dport "$range" -j ${chain_name}
+      done
     fi
 
     # TPROXY
@@ -210,8 +222,12 @@ init_iptables(){
       debug "#TPROXY ($family)"
       "${family}" -w -t mangle -I ${chain_name} -p udp -m socket --transparent -j MARK --set-mark "${table_mark_hex}" >> "${LOG_FILE}" 2>&1
       "${family}" -w -t mangle -A ${chain_name} -p udp -j TPROXY --on-ip "$loopback_ip" --on-port "${port_tproxy}" --tproxy-mark "${table_mark_hex}" >> "${LOG_FILE}" 2>&1
-      "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >> "${LOG_FILE}" 2>&1
-#      "${family}" -w -t mangle -A PREROUTING -m connmark ! --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports 53 -j ${chain_name} >> "${LOG_FILE}" 2>&1
+      "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports  ${port_list} -j ${chain_name} >> "${LOG_FILE}" 2>&1
+    #   "${family}" -w -t mangle -A PREROUTING -m connmark ! --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports 53 -j ${chain_name} >> "${LOG_FILE}" 2>&1
+      echo "$port_ranges" | while read -r range; do
+        [ -n "$range" ] || continue
+        "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp --dport "$range" -j ${chain_name}
+      done
     fi
 
     #DNS
@@ -220,7 +236,7 @@ init_iptables(){
     # OUTPUT nat
     if ! "${family}" -t nat -nL ${chain_name_output} >/dev/null 2>&1; then
       "${family}" -w -t nat -N ${chain_name_output}
-      debug "#OUTPUT ($family)"
+      debug "#OUTPUT nat ($family)"
     fi
     # OUTPUT mangle
     if ! "${family}" -t mangle -nL ${chain_name_output} >/dev/null 2>&1; then
@@ -228,8 +244,13 @@ init_iptables(){
       debug "#OUTPUT mangle ($family)"
       # ! --uid-owner 0 — правило применяется ко всем пользователям, кроме root (UID 0).
       # Для всех исходящих UDP-пакетов, отправленных НЕ от root-пользователя, применяется переход в цепочку swave_out (идёт маркировка, перенаправление, маршрутизация и т.д.).
-      "${family}" -w -t mangle -A OUTPUT -m owner ! --uid-owner 0 -m conntrack ! --ctstate INVALID -p udp -j ${chain_name_output}
+      #"${family}" -w -t mangle -A OUTPUT -m owner ! --uid-owner 0 -m conntrack ! --ctstate INVALID -p udp -j ${chain_name_output}
+      "${family}" -w -t mangle -A OUTPUT -p udp -m multiport --dports  ${port_list} -m conntrack ! --ctstate INVALID -j ${chain_name_output}
       "${family}" -w -t mangle -A ${chain_name_output} -p udp -j CONNMARK --set-mark "${table_mark_hex}"
+      echo "$port_ranges" | while read -r range; do
+        [ -n "$range" ] || continue
+        "${family}" -w -t mangle -A OUTPUT -p udp --dport "$range" -m conntrack ! --ctstate INVALID -j ${chain_name_output}
+      done
     fi
   done
 }
