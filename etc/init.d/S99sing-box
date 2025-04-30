@@ -4,7 +4,16 @@
 # Краткое описание: Запуск / Остановка sing-box
 
 # Путь к JSON-файлу с настройками
-SETTING="/opt/etc/swave/settings.json"
+if [ ! -f /opt/etc/swave/settings.json ]; then
+    echo "Файл настроек /opt/etc/swave/settings.json не найден."
+    echo "Пожалуйста, ознакомьтесь с примером настроек: /opt/etc/swave/example.json"
+    echo "Отредактируйте его в соответствии с вашими требованиями,"
+    echo "затем переместите в нужное место командой:"
+    echo "  mv /opt/etc/swave/example.json /opt/etc/swave/settings.json"
+    exit 1
+else
+    SETTING="/opt/etc/swave/settings.json"
+fi
 
 get_clean_json() {
   awk '
@@ -240,6 +249,7 @@ stop)
     del_iptables "${chain_name}"
     del_iptables "${chain_name_output}"
     busybox killall -q -9 "$(echo "$js_SETTING" | jq -r '.client.name')"
+    "$0" status
     ;;
 status)
     name_client=$(echo "$js_SETTING" | jq -r '.client.name')
