@@ -93,6 +93,54 @@ load_kernel_modules(){
   done
 }
 
+init_dns_tables(){
+
+    # Проверка наличия цепочек и включенного dns_filter
+    if iptables -t nat -nL "${chain_name}" >/dev/null 2>&1 \
+    && iptables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
+    && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
+    then
+        # IPv4
+        for ip in $(echo "$js_SETTING" | jq -r '.network.dns.IPv4[]'); do
+            if ! iptables -t nat -C "${chain_name}" -d "$ip" -p tcp -m tcp ! --dport 53 -j RETURN 2>/dev/null; then
+                iptables -w -t nat    -A "${chain_name}" -d "$ip" -p tcp -m tcp ! --dport 53 -j RETURN
+            fi
+            if ! iptables -t mangle -C "${chain_name}" -d "$ip" -p tcp -m tcp --dport 53 -j RETURN 2>/dev/null; then
+                iptables -w -t mangle -A "${chain_name}" -d "$ip" -p tcp -m tcp --dport 53 -j RETURN
+            fi
+            if ! iptables -t mangle -C "${chain_name}" -d "$ip" -p udp -m udp ! --dport 53 -j RETURN 2>/dev/null; then
+                iptables -w -t mangle -A "${chain_name}" -d "$ip" -p udp -m udp ! --dport 53 -j RETURN
+            fi
+            if ! iptables -t nat -C "${chain_name}" -d "$ip" -p udp -m udp --dport 53 -j RETURN 2>/dev/null; then
+                iptables -w -t nat    -A "${chain_name}" -d "$ip" -p udp -m udp --dport 53 -j RETURN
+            fi
+        done
+
+        # Проверка, разрешён ли IPv6
+        IPv6_ENABLED=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
+        if [ "$IPv6_ENABLED" != "false" ]; then
+            for ip6 in $(echo "$js_SETTING" | jq -r '.network.dns.IPv6[]'); do
+                if ! ip6tables -t nat -C "${chain_name}" -d "$ip6" -p tcp -m tcp ! --dport 53 -j RETURN 2>/dev/null; then
+                    ip6tables -w -t nat    -A "${chain_name}" -d "$ip6" -p tcp -m tcp ! --dport 53 -j RETURN
+                fi
+                if ! ip6tables -t mangle -C "${chain_name}" -d "$ip6" -p tcp -m tcp --dport 53 -j RETURN 2>/dev/null; then
+                    ip6tables -w -t mangle -A "${chain_name}" -d "$ip6" -p tcp -m tcp --dport 53 -j RETURN
+                fi
+                if ! ip6tables -t mangle -C "${chain_name}" -d "$ip6" -p udp -m udp ! --dport 53 -j RETURN 2>/dev/null; then
+                    ip6tables -w -t mangle -A "${chain_name}" -d "$ip6" -p udp -m udp ! --dport 53 -j RETURN
+                fi
+                if ! ip6tables -t nat -C "${chain_name}" -d "$ip6" -p udp -m udp --dport 53 -j RETURN 2>/dev/null; then
+                    ip6tables -w -t nat    -A "${chain_name}" -d "$ip6" -p udp -m udp --dport 53 -j RETURN
+                fi
+            done
+        fi
+
+        echo "Создание DNS цепочки ${chain_name} завершена"
+    fi
+
+}
+
+
 
 #создания цепи и правил
 init_iptables(){
@@ -138,18 +186,7 @@ init_iptables(){
     fi
 
     #DNS
-    if iptables -t nat    -nL "${chain_name}" >/dev/null 2>&1 \
-    && iptables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
-    && echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null
-    then
-        iptables -w -t nat -A ${chain_name} -d 192.168.0.0/16 -p tcp -m tcp ! --dport 53 -j RETURN
-        iptables -w -t mangle -A ${chain_name} -d 192.168.0.0/16 -p tcp -m tcp --dport 53 -j RETURN
-
-        iptables -w -t mangle -A ${chain_name} -d 192.168.0.0/16 -p udp -m udp ! --dport 53 -j RETURN
-        iptables -w -t nat -A ${chain_name} -d 192.168.0.0/16 -p udp -m udp --dport 53 -j RETURN
-
-        echo "Цепочка ${chain_name} уже существует в nat и mangle"
-    fi
+    init_dns_tables
 
     # OUTPUT nat
     if ! "${family}" -t nat -nL ${chain_name_output} >/dev/null 2>&1; then
