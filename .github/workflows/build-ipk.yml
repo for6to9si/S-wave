@@ -2,7 +2,16 @@ name: Build sing-box IPK packages
 
 on:
   workflow_dispatch:
-      
+    inputs:
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
 permissions:
   contents: write
   pages: write
@@ -64,14 +73,14 @@ jobs:
         cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
         chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
         cp ./etc/swave/settings.json sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
-        
+
     - name: Include sing-box license and copyright
       run: |
         cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
         cp opt/sbin/LICENSE CONTROL/
         mv opt/sbin/LICENSE opt/etc/sing-box/
         cd /
- 
+
     - name: Package IPK
       run: |
         cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
@@ -82,7 +91,7 @@ jobs:
         echo "2.0" > ../debian-binary
         cd ..
         tar -czf sing-box_${{ steps.version.outputs.version }}_${{ matrix.arch }}.ipk ./debian-binary ./control.tar.gz ./data.tar.gz
-        
+
     - name: Store build timestamp
       run: echo "BUILD_TIME=$(date +'%T')" >> $GITHUB_ENV
 
@@ -92,7 +101,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: sing-box-${{ matrix.arch }} 
+        name: sing-box-${{ matrix.arch }}
         path: ./*.ipk
         if-no-files-found: error
 
@@ -166,10 +175,17 @@ jobs:
           echo "Changelog:"
           cat changelog.txt
 
-          gh release create "$TAG" artifacts/sing-box-*/sing-box_*.ipk \
+          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
+            gh release create "$TAG" artifacts/sing-box-*/sing-box_*.ipk \
             --repo "$GITHUB_REPOSITORY" \
             --title "Release $TAG" \
             --notes-file changelog.txt \
             --prerelease
+          else
+            gh release create "$TAG" artifacts/sing-box-*/sing-box_*.ipk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Release $TAG" \
+            --notes-file changelog.txt
+          fi
 
 

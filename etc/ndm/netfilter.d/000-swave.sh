@@ -63,6 +63,13 @@ restart_script() {
 
 IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
 
+if [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null)" -eq 0 ]; then
+    echo "IPv6 включён в системе."
+else
+    echo "IPv6 отключён или не поддерживается."
+    IPv6=false
+fi
+
 get_policy_mark() {
 
   # Определяем коды цветов (используем $'...' для интерпретации escape-последовательностей)
