@@ -63,6 +63,7 @@ jobs:
         
         cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
         chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
+        cp ./etc/swave/settings.json sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
         
     - name: Include sing-box license and copyright
       run: |
