@@ -27,6 +27,30 @@ get_clean_json() {
 
 js_SETTING=$(get_clean_json "$SETTING" | jq -c '.' 2>/dev/null)
 
+DEBUG=false
+DEBUG_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
+
+# Функция для отладки
+debug() {
+    [ "$DEBUG" = "true" ] && {
+        _YELLOW='\033[33m'
+        _NC='\033[0m'  # No Color
+        echo -e "${_YELLOW}[DEBUG]${_NC} $*"          # Вывод в терминал
+    #    logger -p debug -t "$(basename "$0")" "$*"  # И в syslog (опционально)
+    #    echo "$(date) $*" >> "$DEBUG_LOG"           # И в файл (опционально)
+    }
+}
+
+# Включение трассировки (если нужно)
+#[ "$DEBUG" = "true" ] && set -x
+
+# Выключение трассировки (если включали)
+[ "$DEBUG" = "true" ] && set +x
+
+# Пример использования
+#chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+#debug "Наименование цепочки ${chain_name}"
+
 IP_RULES_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
 
 # Если переменная не задана, используем /dev/null
@@ -37,8 +61,6 @@ restart_script() {
     exit $?
 }
 
-#CMD=$(echo "$js_SETTING" | jq -r '.client.name')
-
 IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
 
 get_policy_mark() {
@@ -46,7 +68,6 @@ get_policy_mark() {
   # Определяем коды цветов (используем $'...' для интерпретации escape-последовательностей)
   _color_red=$'\033[31m'
   _color_reset=$'\033[0m'
-  _test="test1"
 
   policy_mark=$(
       curl -kfsS "localhost:79/rci/show/ip/policy" \
@@ -96,7 +117,8 @@ load_kernel_modules(){
 init_dns_tables(){
 
     # Проверка наличия цепочек и включенного dns_filter
-    if iptables -t nat -nL "${chain_name}" >/dev/null 2>&1 \
+    if [ "${1}" = "iptables" ] \
+    && iptables -t nat -nL "${chain_name}" >/dev/null 2>&1 \
     && iptables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
     && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
     then
@@ -114,8 +136,15 @@ init_dns_tables(){
             if ! iptables -t nat -C "${chain_name}" -d "$ip" -p udp -m udp --dport 53 -j RETURN 2>/dev/null; then
                 iptables -w -t nat    -A "${chain_name}" -d "$ip" -p udp -m udp --dport 53 -j RETURN
             fi
+            debug "DNS таблица цепи ${chain_name} для ${ip} создана"
         done
+    fi
 
+    if [ "${1}" = "ip6tables" ] \
+    && ip6tables -t nat -nL "${chain_name}" >/dev/null 2>&1 \
+    && ip6tables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
+    && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
+    then
         # Проверка, разрешён ли IPv6
         IPv6_ENABLED=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
         if [ "$IPv6_ENABLED" != "false" ]; then
@@ -132,21 +161,17 @@ init_dns_tables(){
                 if ! ip6tables -t nat -C "${chain_name}" -d "$ip6" -p udp -m udp --dport 53 -j RETURN 2>/dev/null; then
                     ip6tables -w -t nat    -A "${chain_name}" -d "$ip6" -p udp -m udp --dport 53 -j RETURN
                 fi
+                debug "DNS таблица цепи ${chain_name} для ${ip6} создана"
             done
         fi
-
-        echo "Создание DNS цепочки ${chain_name} завершена"
     fi
 
 }
-
-
 
 #создания цепи и правил
 init_iptables(){
   chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
   chain_name_output="${chain_name}"_out
-  echo "${chain_name_output}"
   table_mark_hex=$(echo "$js_SETTING" | jq -r '.network.table_mark_hex')
   port_tproxy=$(echo "$js_SETTING" | jq -r '.network.port_tproxy')
   port_redirect=$(echo "$js_SETTING" | jq -r '.network.port_redirect')
@@ -156,9 +181,7 @@ init_iptables(){
   if echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null; then
     port_forwarding_list="53,${port_forwarding_list}"
   fi
-  echo "cat ${LOG_FILE}"
-  echo "${chain_name}"
-  load_kernel_modules
+#  load_kernel_modules
 
   for family in iptables ip6tables; do
     [ "$family" = "ip6tables" ] && [ "$IPv6" != "true" ] && continue
@@ -170,7 +193,7 @@ init_iptables(){
     # REDIRECT
     if ! "${family}" -t nat -nL ${chain_name} >/dev/null 2>&1; then
       "${family}" -w -t nat -N ${chain_name} >> "${LOG_FILE}" 2>&1
-      echo "#REDIRECT ($family)"
+      debug "#REDIRECT ($family)"
       "${family}" -w -t nat -A ${chain_name} -p tcp -j REDIRECT --to-port "${port_redirect}" >> "${LOG_FILE}" 2>&1
       "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >>"${LOG_FILE}" 2>&1
     fi
@@ -178,7 +201,7 @@ init_iptables(){
     # TPROXY
     if ! "${family}" -t mangle -nL ${chain_name} >/dev/null 2>&1; then
       "${family}" -w -t mangle -N ${chain_name}
-      echo "#TPROXY ($family)"
+      debug "#TPROXY ($family)"
       "${family}" -w -t mangle -I ${chain_name} -p udp -m socket --transparent -j MARK --set-mark "${table_mark_hex}" >> "${LOG_FILE}" 2>&1
       "${family}" -w -t mangle -A ${chain_name} -p udp -j TPROXY --on-ip "$loopback_ip" --on-port "${port_tproxy}" --tproxy-mark "${table_mark_hex}" >> "${LOG_FILE}" 2>&1
       "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports  ${port_forwarding_list} -j ${chain_name} >> "${LOG_FILE}" 2>&1
@@ -186,17 +209,17 @@ init_iptables(){
     fi
 
     #DNS
-    init_dns_tables
+    init_dns_tables "$family"
 
     # OUTPUT nat
     if ! "${family}" -t nat -nL ${chain_name_output} >/dev/null 2>&1; then
       "${family}" -w -t nat -N ${chain_name_output}
-      echo "#OUTPUT ($family)"
+      debug "#OUTPUT ($family)"
     fi
     # OUTPUT mangle
     if ! "${family}" -t mangle -nL ${chain_name_output} >/dev/null 2>&1; then
       "${family}" -w -t mangle -N ${chain_name_output}
-      echo "#OUTPUT ($family)"
+      debug "#OUTPUT mangle ($family)"
       # ! --uid-owner 0 — правило применяется ко всем пользователям, кроме root (UID 0).
       # Для всех исходящих UDP-пакетов, отправленных НЕ от root-пользователя, применяется переход в цепочку swave_out (идёт маркировка, перенаправление, маршрутизация и т.д.).
       "${family}" -w -t mangle -A OUTPUT -m owner ! --uid-owner 0 -m conntrack ! --ctstate INVALID -p udp -j ${chain_name_output}
@@ -209,10 +232,9 @@ init_iptables(){
 # Если цепочка не существует в одной из таблиц, выводит ошибку и возвращает 1.
 # В противном случае возвращает 0.
 check_chain_ipv4() {
-    chain_name="${1}"
     for table in mangle nat; do
-        if ! iptables -t "$table" -nL ${chain_name} > /dev/null 2>&1; then
-            echo "Ошибка: Цепочка ${chain_name} не существует в таблице $table. Сначала создайте её." >&2
+        if ! iptables -t "$table" -nL "${1}" > /dev/null 2>&1; then
+            debug "Ошибка: Цепочка ${1} не существует в таблице $table. Сначала создайте её." >&2
             return 1
         fi
     done
@@ -239,11 +261,9 @@ get_exclude_ip4() {
 
 
 add_ipv4tables_exclusions() {
-    chain_name="${1}"
-    echo "chain_name=$chain_name"
 
     # Проверяем существование цепочки перед началом работы
-    if ! check_chain_ipv4 "$chain_name"; then
+    if ! check_chain_ipv4 "${1}"; then
         exit 1
     fi
 
@@ -290,11 +310,11 @@ add_ipv4tables_exclusions() {
 
         for table in mangle nat; do
             # Проверяем, не существует ли правило уже
-            if ! iptables -w -t "$table" -C ${chain_name} -d "$ip" -j RETURN >/dev/null 2>&1; then
-                iptables -w -t "$table" -A ${chain_name} -d "$ip" -j RETURN >> "${LOG_FILE}" 2>&1
-                echo "[OK] Добавлено исключение: $ip (таблица: $table)"
+            if ! iptables -w -t "$table" -C "${1}" -d "$ip" -j RETURN >/dev/null 2>&1; then
+                iptables -w -t "$table" -A "${1}" -d "$ip" -j RETURN >> "${LOG_FILE}" 2>&1
+                debug "[OK] Добавлено исключение: $ip (таблица: $table)"
             else
-                echo "[Пропуск] Правило для $ip уже существует в таблице $table"
+                debug "[Пропуск] Правило для $ip уже существует в таблице $table"
             fi
         done
     done
@@ -302,10 +322,10 @@ add_ipv4tables_exclusions() {
 
 # Проверяем, существует ли цепочка .network.chain_name в таблицах mangle и nat
 check_chain_ipv6() {
-    chain_name="${1}"
+
     for table in mangle nat; do
-        if ! ip6tables -w -t "$table" -nL ${chain_name} >/dev/null 2>&1; then
-            echo "Ошибка: Цепочка ${chain_name} не существует в таблице $table. Сначала создайте её." >&2
+        if ! ip6tables -w -t "$table" -nL "${1}" >/dev/null 2>&1; then
+            debug "Ошибка: Цепочка ${1} не существует в таблице $table. Сначала создайте её." >&2
             return 1
         fi
     done
@@ -331,10 +351,9 @@ get_exclude_ip6() {
 }
 
 add_ipv6tables_exclusions() {
-    chain_name="${1}"
 
     # Проверяем существование цепочки перед началом работы
-    if ! check_chain_ipv6 "$chain_name"; then
+    if ! check_chain_ipv6 "${1}"; then
         exit 1
     fi
 
@@ -373,11 +392,11 @@ add_ipv6tables_exclusions() {
 
         for table in mangle nat; do
             # Проверяем, не существует ли правило уже
-            if ! ip6tables -w -t "$table" -C ${chain_name} -d "$ip" -j RETURN >/dev/null 2>&1; then
-                ip6tables -w -t "$table" -A ${chain_name} -d "$ip" -j RETURN >> "${LOG_FILE}" 2>&1
-                echo "[OK] Добавлено исключение: $ip (таблица: $table)"
+            if ! ip6tables -w -t "$table" -C "${1}" -d "$ip" -j RETURN >/dev/null 2>&1; then
+                ip6tables -w -t "$table" -A "${1}" -d "$ip" -j RETURN >> "${LOG_FILE}" 2>&1
+                debug "[OK] Добавлено исключение: $ip (таблица: $table)"
             else
-                echo "[Пропуск] Правило для $ip уже существует в таблице $table"
+                debug "[Пропуск] Правило для $ip уже существует в таблице $table"
             fi
         done
     done
@@ -388,11 +407,8 @@ chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
 chain_name_output="${chain_name}"_out
 add_ipv4tables_exclusions "${chain_name}"
 add_ipv4tables_exclusions "${chain_name_output}"
-chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name') # Значение chain_name замещается внутри add_ipv4tables_exclusions
-# shellcheck disable=SC3014
-[ "$IPv6" == "true" ] && add_ipv6tables_exclusions "${chain_name}"
-# shellcheck disable=SC3014
-[ "$IPv6" == "true" ] && add_ipv6tables_exclusions "${chain_name_output}"
+[ "$IPv6" = "true" ] && add_ipv6tables_exclusions "${chain_name}"
+[ "$IPv6" = "true" ] && add_ipv6tables_exclusions "${chain_name_output}"
 
 
-logger -p notice -t "$(basename "$0")" "Swave run"
+logger -p notice -t "$(basename "$0")" "Activate '"${chain_name}"' routing tables"

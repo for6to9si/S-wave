@@ -30,10 +30,36 @@ get_clean_json() {
 
 js_SETTING=$(get_clean_json "$SETTING" | jq -c '.' 2>/dev/null)
 
+DEBUG=false
+DEBUG_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
+
+# Функция для отладки
+debug() {
+    [ "$DEBUG" = "true" ] && {
+        _YELLOW='\033[33m'
+        _NC='\033[0m'  # No Color
+        echo -e "${_YELLOW}[DEBUG]${_NC} $*"          # Вывод в терминал
+    #    logger -p debug -t "$(basename "$0")" "$*"  # И в syslog (опционально)
+    #    echo "$(date) $*" >> "$DEBUG_LOG"           # И в файл (опционально)
+    }
+}
+
+# Включение трассировки (если нужно)
+#[ "$DEBUG" = "true" ] && set -x
+
+# Выключение трассировки (если включали)
+[ "$DEBUG" = "true" ] && set +x
+
+# Пример использования
+#chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+#debug "Наименование цепочки ${chain_name}"
+
+
 # Цвета
 color_green="\033[32m"    # Успешное выполнение, позитивные сообщения
 color_red="\033[31m"      # Критические ошибки, опасные действия
 color_yellow="\033[33m"   # Предупреждения, не критичные проблемы
+color_blue="\033[34m"
 color_reset="\033[0m"     # Сброс цвета к стандартному
 
 IP_RULES_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
@@ -75,23 +101,17 @@ get_policy_mark() {
 init_ip_rules() {
 
   ip_version="${1}"
-  echo "$ip_version"
-
   table_mark_hex=$(echo "$js_SETTING" | jq -r '.network.table_mark_hex')
   table_id=$(echo "$js_SETTING" | jq -r '.network.table_id')
-
-  echo "table_mark=${table_mark_hex}"
-  echo "table_id=${table_id}"
 
   # Проверка, существует ли правило
   if ! busybox ip -"${ip_version}" rule show | grep -q "fwmark ${table_mark_hex} lookup ${table_id}" >/dev/null 2>&1; then
 
-  policy_mark=$(get_policy_mark)
+    policy_mark=$(get_policy_mark)
 
     # Если задан маркер политики, ищем связанную таблицу
     if [ -n "${policy_mark}" ]; then
       policy_table=$(busybox ip rule show | awk -v policy="${policy_mark}" '$0 ~ policy && /lookup/ && !/blackhole/ {print $NF}')
-      echo "policy_table=${policy_table}"
     fi
 
     # Добавляем правило и таблицу маршрутов
@@ -107,37 +127,37 @@ init_ip_rules() {
         if [ -n "${matching_main_route}" ]; then
           busybox ip -"${ip_version}" route add table "${table_id}" ${matching_main_route} >/dev/null 2>&1
         else
-          echo "WARN: Маршрут '${route}' не найден в основной таблице" >&2
+          debug "WARN: Маршрут '${route}' не найден в основной таблице" >&2
         fi
       done
     else
-        echo "ERROR: Маршрут не установлен"
+        debug "ERROR: Маршрут не установлен"
     fi
     # shellcheck disable=SC3037
-    echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица маршрута для Swave успешна создана" >&2
+    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица Swave для IPv"${ip_version}" успешна создана" >&2
   fi
 }
 
 del_iptables() {
-  chain_name="${1}"
 
+  chain_name="${1}"
   for family in iptables ip6tables; do
     for table in nat mangle; do
-      echo "[*] Проверка таблицы '$table' (${family})"
+      debug "[*] Проверка таблицы '$table' (${family})"
       if $family -t "$table" -S 2>/dev/null | grep -qP "^-N ${chain_name}\b"; then
-        echo "[+] Очистка цепочки '${chain_name}' в таблице '$table' (${family})"
+        debug "[+] Очистка цепочки '${chain_name}' в таблице '$table' (${family})"
         $family -t "$table" -F "${chain_name}"
 
-        echo "[+] Удаление переходов в цепочку '${chain_name}' в таблице '$table' (${family})"
+        debug "[+] Удаление переходов в цепочку '${chain_name}' в таблице '$table' (${family})"
         while $family -t "$table" -S 2>/dev/null | grep -P "^-A .+ -j ${chain_name}\b" >/dev/null; do
           local rule=$($family -t "$table" -S 2>/dev/null | grep -P "^-A .+ -j ${chain_name}\b" | head -n 1)
           eval $family -t "$table" ${rule/-A/-D}
         done
 
-        echo "[+] Удаление цепочки '${chain_name}' в таблице '$table' (${family})"
+        debug "[+] Удаление цепочки '${chain_name}' в таблице '$table' (${family})"
         $family -t "$table" -X "${chain_name}"
       else
-        echo "[!] Цепочка '${chain_name}' не найдена или не является пользовательской в таблице '$table' (${family})"
+        debug "[!] Цепочка '${chain_name}' не найдена или не является пользовательской в таблице '$table' (${family})"
       fi
     done
   done
@@ -150,14 +170,12 @@ del_ip_rules() {
   table_mark_hex=$(echo "$js_SETTING" | jq -r '.network.table_mark_hex')
   table_id=$(echo "$js_SETTING" | jq -r '.network.table_id')
 
-  echo "table_mark=${table_mark_hex}"
-  echo "table_id=${table_id}"
 
   if busybox ip -"${ip_version}" rule show | grep -q "fwmark ${table_mark_hex} lookup ${table_id}" >/dev/null 2>&1; then
     busybox ip -"${ip_version}" rule del fwmark ${table_mark_hex} lookup ${table_id} >/dev/null 2>&1
     busybox ip -"${ip_version}" route flush table ${table_id} >/dev/null 2>&1
     # shellcheck disable=SC3037
-    echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица маршрута для Swave успешна удалена" >&2
+    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица маршрута для Swave успешна удалена" >&2
   fi
 }
 
@@ -202,8 +220,7 @@ start)
     exit 1
     }
     init_ip_rules 4
-    # shellcheck disable=SC3014
-    [ "$IPv6" == "true" ] && init_ip_rules 6
+    [ "$IPv6" = "true" ] && init_ip_rules 6
 
     if [ -f ./etc/ndm/netfilter.d/000-swave.sh ]; then
         . ./etc/ndm/netfilter.d/000-swave.sh
@@ -212,7 +229,8 @@ start)
     fi
     export SSL_CERT_DIR=/opt/etc/ssl/certs
     #sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')" 2>> "${LOG_FILE}" &
-    { echo -e "\n=== $(date) ==="; sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"; } >> "${LOG_FILE}" 2>&1 &
+    { echo -e "\n=== $(date) === sing-box client info ==="; sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"; } >> "${LOG_FILE}" 2>&1 &
+    "$0" status
     ;;
 stop)
     del_ip_rules 4
@@ -239,7 +257,7 @@ restart)
     "$0" start
     ;;
 *)
-    echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | status"
+    echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
     ;;
 esac
 
