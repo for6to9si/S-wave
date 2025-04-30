@@ -63,10 +63,10 @@ restart_script() {
 
 IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
 
-if [ "$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null)" -eq 0 ]; then
-    echo "IPv6 включён в системе."
+if ip -6 addr show scope global | grep -q inet6; then
+    debug "IPv6-адреса настроены (глобальные)"
 else
-    echo "IPv6 отключён или не поддерживается."
+    debug "IPv6-адреса отсутствуют или отключены"
     IPv6=false
 fi
 
