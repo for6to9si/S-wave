@@ -153,8 +153,8 @@ init_dns_tables(){
     && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
     then
         # Проверка, разрешён ли IPv6
-        IPv6_ENABLED=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
-        if [ "$IPv6_ENABLED" != "false" ]; then
+
+        if [ "$IPv6" != "false" ]; then
             for ip6 in $(echo "$js_SETTING" | jq -r '.network.dns.IPv6[]'); do
                 if ! ip6tables -t nat -C "${chain_name}" -d "$ip6" -p tcp -m tcp ! --dport 53 -j RETURN 2>/dev/null; then
                     ip6tables -w -t nat    -A "${chain_name}" -d "$ip6" -p tcp -m tcp ! --dport 53 -j RETURN
@@ -183,7 +183,6 @@ init_iptables(){
   port_tproxy=$(echo "$js_SETTING" | jq -r '.network.port_tproxy')
   port_redirect=$(echo "$js_SETTING" | jq -r '.network.port_redirect')
   policy_mark=$(get_policy_mark)
-  IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
   port_forwarding_list=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_list | join(",")')
   if echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null; then
     port_forwarding_list="53,${port_forwarding_list}"
