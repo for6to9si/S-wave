@@ -15,6 +15,29 @@ else
     SETTING="/opt/etc/swave/settings.json"
 fi
 
+# Параметры
+PING_TARGET="8.8.8.8"  # Можно заменить на свой сервер
+TIMEOUT=30             # Максимальное время ожидания (в секундах)
+INTERVAL=4             # Интервал между попытками
+
+logger -p debug -t "$(basename "$0")" "Проверка доступности Интернета..."
+
+ELAPSED=0
+while ! ping -c 1 -W 1 "$PING_TARGET" >/dev/null 2>&1; do
+    logger -p debug -t "$(basename "$0")" "Интернет недоступен, повтор через $INTERVAL сек..."
+    sleep "$INTERVAL"
+    ELAPSED=$((ELAPSED + INTERVAL))
+    if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+        logger -p debug -t "$(basename "$0")" "Не удалось установить соединение с интернетом за $TIMEOUT сек. Прерываем запуск."
+        exit 1
+    fi
+done
+
+logger -p debug -t "$(basename "$0")" "Интернет доступен."
+
+
+
+
 get_clean_json() {
   awk '
   BEGIN { in_string = 0 }
