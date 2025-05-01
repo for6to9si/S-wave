@@ -9,15 +9,14 @@ CALLER=$2
 DESC="Sing-Box VPN"
 
 is_running() {
-	PID_RUNNING=$(pgrep -nx "$PROCS" 2>/dev/null)
+   PID_RUNNING=$(pgrep -nx "$PROCS" 2>/dev/null)
 
-	if [ -z "$PID_RUNNING" ]; then
-		return 1
-	fi
+   if [ -z "$PID_RUNNING" ]; then
+      return 1
+   fi
 
-	return 0
+   return 0
 }
-
 
 # Путь к JSON-файлу с настройками
 if [ ! -f /opt/etc/swave/settings.json ]; then
@@ -729,12 +728,12 @@ firewall_ip6tables(){
 case $ACTION in
   start)
       if [ "$CALLER" = "cron" -a "$ENABLED" != yes ]; then
-		    return 8
-	    fi
+          return 8
+       fi
       if is_running; then
-		    echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
-		    return 1
-	    fi
+          echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
+          return 1
+       fi
       kernel_modules_load
       wait_for_iptables_tables 20 || exit 1
       policy_mark=$(get_policy_mark) || {
