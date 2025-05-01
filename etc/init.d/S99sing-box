@@ -1,7 +1,28 @@
 #!/bin/sh
 
-# Информация о службе
-# Краткое описание: Запуск / Остановка sing-box
+# Pass your args here
+ARGS=""
+
+
+ENABLED=yes
+
+PROCS=sing-box
+PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ACTION=$1
+CALLER=$2
+ARGS="run -c /opt/etc/sing-box/config.json"
+DESC="Sing-Box VPN"
+
+is_running() {
+	PID_RUNNING=$(pgrep -nx "$PROCS" 2>/dev/null)
+
+	if [ -z "$PID_RUNNING" ]; then
+		return 1
+	fi
+
+	return 0
+}
+
 
 # Путь к JSON-файлу с настройками
 if [ ! -f /opt/etc/swave/settings.json ]; then
@@ -15,25 +36,29 @@ else
     SETTING="/opt/etc/swave/settings.json"
 fi
 
-# Параметры
-PING_TARGET="8.8.8.8"  # Можно заменить на свой сервер
-TIMEOUT=30             # Максимальное время ожидания (в секундах)
-INTERVAL=4             # Интервал между попытками
+wait_for_internet() {
+    PING_TARGET="${1:-8.8.8.8}"  # Цель для пинга, по умолчанию Google DNS
+    TIMEOUT="${2:-30}"          # Время ожидания (в секундах)
+    INTERVAL="${3:-2}"          # Интервал между проверками
 
-logger -p debug -t "$(basename "$0")" "Проверка доступности Интернета..."
+    logger -t "$(basename "$0")"  "[sing-box] Ожидание подключения к интернету (цель: $PING_TARGET)..."
 
-# ELAPSED=0
-# while ! ping -c 1 -W 1 "$PING_TARGET" >/dev/null 2>&1; do
-#     logger -p debug -t "$(basename "$0")" "Интернет недоступен, повтор через $INTERVAL сек..."
-#     sleep "$INTERVAL"
-#     ELAPSED=$((ELAPSED + INTERVAL))
-#     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-#         logger -p debug -t "$(basename "$0")" "Не удалось установить соединение с интернетом за $TIMEOUT сек. Прерываем запуск."
-#         exit 1
-#     fi
-# done
+    ELAPSED=0
+    while ! ping -c 1 -W 1 "$PING_TARGET" >/dev/null 2>&1; do
+        logger -t "$(basename "$0")" "[sing-box] Интернет недоступен, пробуем снова через $INTERVAL сек..."
+        sleep "$INTERVAL"
+        ELAPSED=$((ELAPSED + INTERVAL))
+        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            logger -t "$(basename "$0")" "[sing-box] Интернет так и не появился за $TIMEOUT сек. Прерываем запуск."
+            return 1
+        fi
+    done
 
-# logger -p debug -t "$(basename "$0")" "Интернет доступен."
+    logger -t "$(basename "$0")" "[sing-box] Интернет доступен. Продолжаем запуск."
+    return 0
+}
+
+
 
 get_clean_json() {
   awk '
@@ -204,7 +229,7 @@ del_ip_rules() {
     busybox ip -"${ip_version}" rule del fwmark ${table_mark_hex} lookup ${table_id} >/dev/null 2>&1
     busybox ip -"${ip_version}" route flush table ${table_id} >/dev/null 2>&1
     # shellcheck disable=SC3037
-    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица маршрута для Swave успешна удалена" >&2
+    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица IPv${ip_version} маршрута для Swave успешна удалена" >&2
   fi
 }
 
@@ -671,6 +696,17 @@ firewall_ip6tables(){
 # Менеджер команд
 case "${1}" in
   start)
+
+      if [ "$CALLER" = "cron" -a "$ENABLED" != yes ]; then
+		    return 8
+	    fi
+
+      if is_running; then
+		    echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
+		    return 1
+	    fi
+
+      wait_for_internet 8.8.8.8 30 5 || exit 1
       policy_mark=$(get_policy_mark) || {
       # shellcheck disable=SC3037
       echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_yellow}[INFO]${color_reset} Добавьте политику Swave на вашем роутере " >&2
@@ -678,11 +714,22 @@ case "${1}" in
       }
       firewall_iptables
       [ "$IPv6" = "true" ] && firewall_ip6tables
-
+      name_client=$(echo "$js_SETTING" | jq -r '.client.name')
+      echo -e " ${name_client} ${color_green}запускается...${color_reset}"
       export SSL_CERT_DIR=/opt/etc/ssl/certs
-      #sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')" 2>> "${LOG_FILE}" &
-      { echo -e "\n=== $(date) === sing-box client info ==="; sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"; } >> "${LOG_FILE}" 2>&1 &
-      "$0" status
+      {
+          echo -e "\n=== $(date) === sing-box client info ==="
+          sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"
+      } >> "${LOG_FILE}" 2>&1 &
+      # Небольшая задержка для проверки, что процесс запустился
+      sleep 4
+      if pgrep -f "sing-box run" > /dev/null; then
+          echo -e " ${name_client} ${color_green}успешно запущен${color_reset}"
+          logger -t "$(basename "$0")" "${name_client} успешно запущен"
+      else
+          echo -e " ${name_client} ${color_red}не удалось запустить${color_reset}"
+          logger -t "$(basename "$0")" "${name_client} не удалось запустить"
+      fi
       ;;
   stop)
       del_ip_rules 4
