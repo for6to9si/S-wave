@@ -1,16 +1,11 @@
 #!/bin/sh
 
-# Pass your args here
-ARGS=""
-
-
 ENABLED=yes
 
 PROCS=sing-box
 PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ACTION=$1
 CALLER=$2
-ARGS="run -c /opt/etc/sing-box/config.json"
 DESC="Sing-Box VPN"
 
 is_running() {
@@ -58,7 +53,33 @@ wait_for_internet() {
     return 0
 }
 
+wait_for_iptables_tables() {
+    TIMEOUT="${1:-20}"
+    INTERVAL=1
+    ELAPSED=0
 
+    logger -t "$(basename "$0")" "[sing-box] Ожидание доступности iptables (таблицы nat и mangle)..."
+
+    while :; do
+        NAT_READY=false
+        MANGLE_READY=false
+
+        iptables -t nat -S >/dev/null 2>&1 && NAT_READY=true
+        iptables -t mangle -S >/dev/null 2>&1 && MANGLE_READY=true
+
+        if $NAT_READY && $MANGLE_READY; then
+            logger -t "$(basename "$0")" "[sing-box] iptables таблицы nat и mangle доступны"
+            return 0
+        fi
+
+        sleep "$INTERVAL"
+        ELAPSED=$((ELAPSED + INTERVAL))
+        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            logger -t "$(basename "$0")" "[sing-box] iptables таблицы не стали доступны за $TIMEOUT сек"
+            return 1
+        fi
+    done
+}
 
 get_clean_json() {
   awk '
@@ -127,7 +148,6 @@ get_policy_mark() {
   # Определяем коды цветов (используем $'...' для интерпретации escape-последовательностей)
   _color_red=$'\033[31m'
   _color_reset=$'\033[0m'
-  _test="test1"
 
   policy_mark=$(
       curl -kfsS "localhost:79/rci/show/ip/policy" \
@@ -272,27 +292,41 @@ else
     IPv6=false
 fi
 
-load_kernel_modules(){
+kernel_modules_load() {
+    KERNEL=$(uname -r)
 
-  modules=$(echo "$js_SETTING" | jq -r '.network.modules | join(" ")')
-  modules_path=$(echo "$js_SETTING" | jq -r '.network.module_path')
+    for mod in xt_TPROXY xt_socket; do
+        debug "[INFO] Checking for module: $mod"
 
-  for mod in $modules; do
-      modname=$(basename "$mod" .ko)
-      if lsmod | grep -q "^$modname"; then
-          continue
-      else
-          echo "Модуль $modname не загружен. Пытаюсь загрузить..."
-          logger -t "$(basename "$0")" "Модуль $modname не загружен. Пытаюсь загрузить..."
-          if insmod "$modules_path/$mod"; then
-              echo "Модуль $modname успешно загружен."
-              logger -t "$(basename "$0")" "Модуль $modname успешно загружен."
-          else
-              echo "Ошибка загрузки модуля $modname из $modules_path/$mod"
-              logger -t "$(basename "$0")" "Ошибка загрузки модуля $modname из $modules_path/$mod"
-          fi
-      fi
-  done
+        if lsmod | grep -q "^$mod"; then
+            debug "[OK] $mod already loaded"
+            continue
+        fi
+
+        mod_file=$(find /lib/modules/"$KERNEL" -name "$mod.ko*" 2>/dev/null | head -n1)
+
+        if [ -n "$mod_file" ]; then
+            logger -t "$(basename "$0")" "[INFO] Found $mod at $mod_file"
+            if insmod "$mod_file" 2>/dev/null; then
+                logger -t "$(basename "$0")" "[OK] $mod loaded via insmod"
+                continue
+            else
+                logger -t "$(basename "$0")" "[WARN] insmod failed for $mod"
+            fi
+        else
+            logger -t "$(basename "$0")" "[WARN] No .ko file found for $mod"
+        fi
+
+        if modprobe "$mod" --first-time 2>/dev/null; then
+            logger -t "$(basename "$0")" "[OK] $mod loaded via modprobe"
+        else
+            if lsmod | grep -q "^$mod"; then
+                logger -t "$(basename "$0")" "[OK] $mod is already loaded (modprobe failed because of that)"
+            else
+                logger -t "$(basename "$0")" "[FAIL] Failed to load $mod"
+            fi
+        fi
+    done
 }
 
 init_dns_tables(){
@@ -442,8 +476,6 @@ init_tables_mangle(){
     fi
     # Безопасно достаём диапазоны портов или пустой список
     port_ranges=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_range // [] | .[]')
-
-    load_kernel_modules
 
     # Используем ::1 для ip6tables, иначе 127.0.0.1
     loopback_ip="127.0.0.1"
@@ -694,19 +726,17 @@ firewall_ip6tables(){
 }
 
 # Менеджер команд
-case "${1}" in
+case $ACTION in
   start)
-
       if [ "$CALLER" = "cron" -a "$ENABLED" != yes ]; then
 		    return 8
 	    fi
-
       if is_running; then
 		    echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
 		    return 1
 	    fi
-
-      wait_for_internet 8.8.8.8 30 5 || exit 1
+      kernel_modules_load
+      wait_for_iptables_tables 20 || exit 1
       policy_mark=$(get_policy_mark) || {
       # shellcheck disable=SC3037
       echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_yellow}[INFO]${color_reset} Добавьте политику Swave на вашем роутере " >&2

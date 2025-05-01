@@ -7,7 +7,7 @@
   "app":
   {
     "name": "swave",
-    "version": "0.0.12",
+    "version": "0.0.13",
     "log": "/opt/var/log/swave/swava.log"
   },
   "network":
@@ -18,13 +18,6 @@
     "chain_name": "swave",
     "port_redirect": "60008",
     "port_tproxy": "60009",
-    "modules":
-    [
-      "xt_TPROXY.ko",
-      "xt_socket.ko",
-      "xt_owner.ko"
-    ],
-    "module_path": "/lib/modules/4.9-ndm-5",
     "port_forwarding_list":
     [
       80,
@@ -35,7 +28,7 @@
       "1024:1055",
       "1000:1099"
     ],
-    "IPv6": false,
+    "IPv6": true,
     "IPv6_exclusions":[
       "2a01:7e00::/29", //IP адреса ваших корпоративных серверов
       "2001:19f0::/32"
