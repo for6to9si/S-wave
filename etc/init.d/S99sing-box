@@ -277,20 +277,14 @@ init_dns_tables(){
 
     # Проверка наличия цепочек и включенного dns_filter
     if [ "${1}" = "iptables" ] \
+    && [ "${2}" = "nat" ] \
     && iptables -t nat -nL "${chain_name}" >/dev/null 2>&1 \
-    && iptables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
     && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
     then
         # IPv4
         for ip in $(echo "$js_SETTING" | jq -r '.network.dns.IPv4[]'); do
             if ! iptables -t nat -C "${chain_name}" -d "$ip" -p tcp -m tcp ! --dport 53 -j RETURN 2>/dev/null; then
                 iptables -w -t nat    -A "${chain_name}" -d "$ip" -p tcp -m tcp ! --dport 53 -j RETURN
-            fi
-            if ! iptables -t mangle -C "${chain_name}" -d "$ip" -p tcp -m tcp --dport 53 -j RETURN 2>/dev/null; then
-                iptables -w -t mangle -A "${chain_name}" -d "$ip" -p tcp -m tcp --dport 53 -j RETURN
-            fi
-            if ! iptables -t mangle -C "${chain_name}" -d "$ip" -p udp -m udp ! --dport 53 -j RETURN 2>/dev/null; then
-                iptables -w -t mangle -A "${chain_name}" -d "$ip" -p udp -m udp ! --dport 53 -j RETURN
             fi
             if ! iptables -t nat -C "${chain_name}" -d "$ip" -p udp -m udp --dport 53 -j RETURN 2>/dev/null; then
                 iptables -w -t nat    -A "${chain_name}" -d "$ip" -p udp -m udp --dport 53 -j RETURN
@@ -299,9 +293,26 @@ init_dns_tables(){
         done
     fi
 
+    if [ "${1}" = "iptables" ] \
+    && [ "${2}" = "mangle" ] \
+    && iptables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
+    && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
+    then
+        # IPv4
+        for ip in $(echo "$js_SETTING" | jq -r '.network.dns.IPv4[]'); do
+            if ! iptables -t mangle -C "${chain_name}" -d "$ip" -p tcp -m tcp --dport 53 -j RETURN 2>/dev/null; then
+                iptables -w -t mangle -A "${chain_name}" -d "$ip" -p tcp -m tcp --dport 53 -j RETURN
+            fi
+            if ! iptables -t mangle -C "${chain_name}" -d "$ip" -p udp -m udp ! --dport 53 -j RETURN 2>/dev/null; then
+                iptables -w -t mangle -A "${chain_name}" -d "$ip" -p udp -m udp ! --dport 53 -j RETURN
+            fi
+            debug "DNS таблица цепи ${chain_name} для ${ip} создана"
+        done
+    fi
+
     if [ "${1}" = "ip6tables" ] \
+    && [ "${2}" = "nat" ] \
     && ip6tables -t nat -nL "${chain_name}" >/dev/null 2>&1 \
-    && ip6tables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
     && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
     then
         # Проверка, разрешён ли IPv6
@@ -311,12 +322,6 @@ init_dns_tables(){
                 if ! ip6tables -t nat -C "${chain_name}" -d "$ip6" -p tcp -m tcp ! --dport 53 -j RETURN 2>/dev/null; then
                     ip6tables -w -t nat    -A "${chain_name}" -d "$ip6" -p tcp -m tcp ! --dport 53 -j RETURN
                 fi
-                if ! ip6tables -t mangle -C "${chain_name}" -d "$ip6" -p tcp -m tcp --dport 53 -j RETURN 2>/dev/null; then
-                    ip6tables -w -t mangle -A "${chain_name}" -d "$ip6" -p tcp -m tcp --dport 53 -j RETURN
-                fi
-                if ! ip6tables -t mangle -C "${chain_name}" -d "$ip6" -p udp -m udp ! --dport 53 -j RETURN 2>/dev/null; then
-                    ip6tables -w -t mangle -A "${chain_name}" -d "$ip6" -p udp -m udp ! --dport 53 -j RETURN
-                fi
                 if ! ip6tables -t nat -C "${chain_name}" -d "$ip6" -p udp -m udp --dport 53 -j RETURN 2>/dev/null; then
                     ip6tables -w -t nat    -A "${chain_name}" -d "$ip6" -p udp -m udp --dport 53 -j RETURN
                 fi
@@ -325,10 +330,77 @@ init_dns_tables(){
         fi
     fi
 
+    if [ "${1}" = "ip6tables" ] \
+    && [ "${2}" = "mangle" ] \
+    && ip6tables -t mangle -nL "${chain_name}" >/dev/null 2>&1 \
+    && echo "$js_SETTING" | jq -e '.network.dns.dns_filter == true' >/dev/null
+    then
+        # Проверка, разрешён ли IPv6
+
+        if [ "$IPv6" != "false" ]; then
+            for ip6 in $(echo "$js_SETTING" | jq -r '.network.dns.IPv6[]'); do
+                if ! ip6tables -t mangle -C "${chain_name}" -d "$ip6" -p tcp -m tcp --dport 53 -j RETURN 2>/dev/null; then
+                    ip6tables -w -t mangle -A "${chain_name}" -d "$ip6" -p tcp -m tcp --dport 53 -j RETURN
+                fi
+                if ! ip6tables -t mangle -C "${chain_name}" -d "$ip6" -p udp -m udp ! --dport 53 -j RETURN 2>/dev/null; then
+                    ip6tables -w -t mangle -A "${chain_name}" -d "$ip6" -p udp -m udp ! --dport 53 -j RETURN
+                fi
+                debug "DNS таблица цепи ${chain_name} для ${ip6} создана"
+            done
+        fi
+    fi
+
 }
 
+init_tables_nat(){
+    family="${1}"
+    chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+    chain_name_output="${chain_name}"_out
+    table_mark_hex=$(echo "$js_SETTING" | jq -r '.network.table_mark_hex')
+    port_tproxy=$(echo "$js_SETTING" | jq -r '.network.port_tproxy')
+    port_redirect=$(echo "$js_SETTING" | jq -r '.network.port_redirect')
+    policy_mark=$(get_policy_mark)
+    port_list=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_list | join(",")')
+    # Проверяем, если список пуст
+    if [ -z "$port_list" ]; then
+    echo "Ошибка: Нет портов в port_forwarding_list!" >&2
+    exit 1
+    fi
+    if echo "$js_SETTING" | jq -e '.network.dns.dns_filter' > /dev/null; then
+    port_list="53,${port_list}"
+    fi
+    # Безопасно достаём диапазоны портов или пустой список
+    port_ranges=$(echo "$js_SETTING" | jq -r '.network.port_forwarding_range // [] | .[]')
+
+    # Используем ::1 для ip6tables, иначе 127.0.0.1
+    loopback_ip="127.0.0.1"
+    [ "$family" = "ip6tables" ] && loopback_ip="::1"
+
+        # REDIRECT
+    if ! "${family}" -t nat -nL ${chain_name} >/dev/null 2>&1; then
+      "${family}" -w -t nat -N ${chain_name} >> "${LOG_FILE}" 2>&1
+      debug "#REDIRECT ($family)"
+      "${family}" -w -t nat -A ${chain_name} -p tcp -j REDIRECT --to-port "${port_redirect}" >> "${LOG_FILE}" 2>&1
+      "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_list} -j ${chain_name} >>"${LOG_FILE}" 2>&1
+      echo "$port_ranges" | while read -r range; do
+        [ -n "$range" ] || continue
+        "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp --dport "$range" -j ${chain_name}
+      done
+    fi
+        #DNS
+    init_dns_tables "$family" "nat"
+
+        # OUTPUT nat
+    if ! "${family}" -t nat -nL ${chain_name_output} >/dev/null 2>&1; then
+      "${family}" -w -t nat -N ${chain_name_output}
+      debug "#OUTPUT nat ($family)"
+    fi
+
+}
+
+
 #создания цепи и правил
-init_tables(){
+init_tables_mangle(){
 
     family="${1}"
     chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
@@ -355,18 +427,6 @@ init_tables(){
     loopback_ip="127.0.0.1"
     [ "$family" = "ip6tables" ] && loopback_ip="::1"
 
-    # REDIRECT
-    if ! "${family}" -t nat -nL ${chain_name} >/dev/null 2>&1; then
-      "${family}" -w -t nat -N ${chain_name} >> "${LOG_FILE}" 2>&1
-      debug "#REDIRECT ($family)"
-      "${family}" -w -t nat -A ${chain_name} -p tcp -j REDIRECT --to-port "${port_redirect}" >> "${LOG_FILE}" 2>&1
-      "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp -m multiport --dports  ${port_list} -j ${chain_name} >>"${LOG_FILE}" 2>&1
-      echo "$port_ranges" | while read -r range; do
-        [ -n "$range" ] || continue
-        "${family}" -w -t nat -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p tcp --dport "$range" -j ${chain_name}
-      done
-    fi
-
     # TPROXY
     if ! "${family}" -t mangle -nL ${chain_name} >/dev/null 2>&1; then
       "${family}" -w -t mangle -N ${chain_name}
@@ -382,13 +442,8 @@ init_tables(){
     fi
 
     #DNS
-    init_dns_tables "$family"
+    init_dns_tables "$family" "mangle"
 
-    # OUTPUT nat
-    if ! "${family}" -t nat -nL ${chain_name_output} >/dev/null 2>&1; then
-      "${family}" -w -t nat -N ${chain_name_output}
-      debug "#OUTPUT nat ($family)"
-    fi
     # OUTPUT mangle
     if ! "${family}" -t mangle -nL ${chain_name_output} >/dev/null 2>&1; then
       "${family}" -w -t mangle -N ${chain_name_output}
@@ -579,24 +634,51 @@ add_ipv6tables_exclusions() {
     done
 }
 
-firewall_iptables(){
+firewall_iptables_nat(){
   init_ip_rules 4
-  init_tables "iptables"
+  init_tables_nat "iptables"
   chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
   chain_name_output="${chain_name}"_out
-  add_ipv4tables_exclusions "${chain_name}"
-  add_ipv4tables_exclusions "${chain_name_output}"
+  add_ipv4tables_exclusions "${chain_name}" "nat"
+  add_ipv4tables_exclusions "${chain_name_output}" "nat"
+}
+
+firewall_iptables_mangle(){
+  init_ip_rules 4
+  init_tables_mangle "iptables"
+  chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+  chain_name_output="${chain_name}"_out
+  add_ipv4tables_exclusions "${chain_name}" "mangle"
+  add_ipv4tables_exclusions "${chain_name_output}" "mangle"
+}
+
+firewall_ip6tables_nat(){
+  init_ip_rules 6
+  init_tables_nat "ip6tables"
+  chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+  chain_name_output="${chain_name}"_out
+  add_ipv6tables_exclusions "${chain_name}" "nat"
+  add_ipv6tables_exclusions "${chain_name_output}" "nat"
+}
+
+firewall_ip6tables_mangle(){
+  init_ip_rules 6
+  init_tables_mangle "ip6tables"
+  chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+  chain_name_output="${chain_name}"_out
+  add_ipv6tables_exclusions "${chain_name}" "mangle"
+  add_ipv6tables_exclusions "${chain_name_output}" "mangle"
+}
+
+firewall_iptables(){
+  firewall_iptables_nat
+  firewall_iptables_mangle
 }
 
 firewall_ip6tables(){
-  init_ip_rules 6
-  init_tables "ip6tables"
-  chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
-  chain_name_output="${chain_name}"_out
-  add_ipv6tables_exclusions "${chain_name}"
-  add_ipv6tables_exclusions "${chain_name_output}"
+  firewall_ip6tables_nat
+  firewall_ip6tables_mangle
 }
-
 
 # Менеджер команд
 case "${1}" in
@@ -639,11 +721,17 @@ case "${1}" in
       "$0" stop
       "$0" start
       ;;
-  firewall_iptables)
-      firewall_iptables
+  firewall_iptables_nat)
+      firewall_iptables_nat
       ;;
-  firewall_ip6tables)
-      firewall_ip6tables
+  firewall_iptables_mangle)
+      firewall_iptables_mangle
+      ;;
+  firewall_ip6tables_nat)
+      firewall_ip6tables_nat
+      ;;
+  firewall_ip6tables_mangle)
+      firewall_ip6tables_mangle
       ;;
   *)
       echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
