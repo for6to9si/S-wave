@@ -44,7 +44,12 @@ get_clean_json() {
   }' "$1"
 }
 
+# Парсинг JSON
 js_SETTING=$(get_clean_json "$SETTING" | jq -c '.' 2>/dev/null)
+if [ $? -ne 0 ] || [ -z "$js_SETTING" ]; then
+  echo "Ошибка: файл '$SETTING' содержит некорректный JSON." >&2
+  exit 1
+fi
 
 DEBUG_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
 
