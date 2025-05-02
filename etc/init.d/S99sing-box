@@ -1,22 +1,14 @@
 #!/bin/sh
 
 ENABLED=yes
+DEBUG=true
 
-PROCS=sing-box
-PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ACTION=$1
-CALLER=$2
-DESC="Sing-Box VPN"
+# Включение трассировки (если нужно)
+#[ "$DEBUG" = "true" ] && set -x
 
-is_running() {
-   PID_RUNNING=$(pgrep -nx "$PROCS" 2>/dev/null)
+# Выключение трассировки (если включали)
+[ "$DEBUG" = "true" ] && set +x
 
-   if [ -z "$PID_RUNNING" ]; then
-      return 1
-   fi
-
-   return 0
-}
 
 # Путь к JSON-файлу с настройками
 if [ ! -f /opt/etc/swave/settings.json ]; then
@@ -29,56 +21,6 @@ if [ ! -f /opt/etc/swave/settings.json ]; then
 else
     SETTING="/opt/etc/swave/settings.json"
 fi
-
-wait_for_internet() {
-    PING_TARGET="${1:-8.8.8.8}"  # Цель для пинга, по умолчанию Google DNS
-    TIMEOUT="${2:-30}"          # Время ожидания (в секундах)
-    INTERVAL="${3:-2}"          # Интервал между проверками
-
-    logger -t "$(basename "$0")"  "[sing-box] Ожидание подключения к интернету (цель: $PING_TARGET)..."
-
-    ELAPSED=0
-    while ! ping -c 1 -W 1 "$PING_TARGET" >/dev/null 2>&1; do
-        logger -t "$(basename "$0")" "[sing-box] Интернет недоступен, пробуем снова через $INTERVAL сек..."
-        sleep "$INTERVAL"
-        ELAPSED=$((ELAPSED + INTERVAL))
-        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-            logger -t "$(basename "$0")" "[sing-box] Интернет так и не появился за $TIMEOUT сек. Прерываем запуск."
-            return 1
-        fi
-    done
-
-    logger -t "$(basename "$0")" "[sing-box] Интернет доступен. Продолжаем запуск."
-    return 0
-}
-
-wait_for_iptables_tables() {
-    TIMEOUT="${1:-20}"
-    INTERVAL=1
-    ELAPSED=0
-
-    logger -t "$(basename "$0")" "[sing-box] Ожидание доступности iptables (таблицы nat и mangle)..."
-
-    while :; do
-        NAT_READY=false
-        MANGLE_READY=false
-
-        iptables -t nat -S >/dev/null 2>&1 && NAT_READY=true
-        iptables -t mangle -S >/dev/null 2>&1 && MANGLE_READY=true
-
-        if $NAT_READY && $MANGLE_READY; then
-            logger -t "$(basename "$0")" "[sing-box] iptables таблицы nat и mangle доступны"
-            return 0
-        fi
-
-        sleep "$INTERVAL"
-        ELAPSED=$((ELAPSED + INTERVAL))
-        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
-            logger -t "$(basename "$0")" "[sing-box] iptables таблицы не стали доступны за $TIMEOUT сек"
-            return 1
-        fi
-    done
-}
 
 get_clean_json() {
   awk '
@@ -104,7 +46,6 @@ get_clean_json() {
 
 js_SETTING=$(get_clean_json "$SETTING" | jq -c '.' 2>/dev/null)
 
-DEBUG=true
 DEBUG_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
 
 # Функция для отладки
@@ -117,12 +58,6 @@ debug() {
     #    echo "$(date) $*" >> "$DEBUG_LOG"           # И в файл (опционально)
     }
 }
-
-# Включение трассировки (если нужно)
-#[ "$DEBUG" = "true" ] && set -x
-
-# Выключение трассировки (если включали)
-[ "$DEBUG" = "true" ] && set +x
 
 # Пример использования
 #chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
@@ -141,6 +76,69 @@ IP_RULES_LOG=$(echo "$js_SETTING" | jq -r '.app.log')
 # Если переменная не задана, используем /dev/null
 LOG_FILE="${IP_RULES_LOG:-/dev/null}"
 
+PROCS=$(echo "$js_SETTING" | jq -r '.client.name')
+PATH=/opt/sbin:/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ACTION=$1
+CALLER=$2
+
+
+is_running() {
+	PID_RUNNING=$(pgrep -nx "$PROCS" 2>/dev/null)
+
+	if [ -z "$PID_RUNNING" ]; then
+		return 1
+	fi
+
+	return 0
+}
+
+wait_for_iptables_tables() {
+    TIMEOUT="${1:-20}"
+    INTERVAL=1
+    ELAPSED=0
+    client=$(echo "$js_SETTING" | jq -r '.client.name')
+    logger -t "$(basename "$0")" "[${client}] Ожидание доступности iptables (таблицы nat и mangle)..."
+
+    while :; do
+        NAT_READY=false
+        MANGLE_READY=false
+
+        iptables -t nat -S >/dev/null 2>&1 && NAT_READY=true
+        iptables -t mangle -S >/dev/null 2>&1 && MANGLE_READY=true
+
+        if $NAT_READY && $MANGLE_READY; then
+            logger -t "$(basename "$0")" "[${client}] iptables таблицы nat и mangle доступны"
+            return 0
+        fi
+
+        sleep "$INTERVAL"
+        ELAPSED=$((ELAPSED + INTERVAL))
+        if [ "$ELAPSED" -ge "$TIMEOUT" ]; then
+            logger -t "$(basename "$0")" "[${client}] iptables таблицы не стали доступны за $TIMEOUT сек"
+            return 1
+        fi
+    done
+}
+
+check_iptables_tproxy() {
+    TEST_CHAIN=$(echo "$js_SETTING" | jq -r '.network.chain_name // "TPROXY_TEST_CHAIN"')
+
+    # Создаем временную цепочку в таблице mangle
+    iptables -t mangle -N "${TEST_CHAIN}" 2>/dev/null
+
+    # Пробуем безопасно вставить TPROXY+SOCKET правило
+    if iptables -t mangle -A "${TEST_CHAIN}" -p tcp -m socket -j TPROXY --on-port 12345 --tproxy-mark 0x1/0x1 2>/dev/null; then
+        debug "[OK] iptables поддерживает TPROXY и SOCKET"
+        iptables -t mangle -F "${TEST_CHAIN}"
+        iptables -t mangle -X "${TEST_CHAIN}"
+        return 0
+    else
+        echo "[-] iptables не поддерживает TPROXY и/или SOCKET"
+        iptables -t mangle -F "${TEST_CHAIN}" 2>/dev/null
+        iptables -t mangle -X "${TEST_CHAIN}" 2>/dev/null
+        return 1
+    fi
+}
 
 get_policy_mark() {
 
@@ -206,8 +204,9 @@ init_ip_rules() {
     else
         debug "ERROR: Маршрут не установлен"
     fi
+    appname=$(echo "$js_SETTING" | jq -r '.app.name')
     # shellcheck disable=SC3037
-    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица Swave для IPv"${ip_version}" успешна создана" >&2
+    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Маршрут ${appname} для IPv${ip_version} успешна создана" >&2
   fi
 }
 
@@ -247,8 +246,9 @@ del_ip_rules() {
   if busybox ip -"${ip_version}" rule show | grep -q "fwmark ${table_mark_hex} lookup ${table_id}" >/dev/null 2>&1; then
     busybox ip -"${ip_version}" rule del fwmark ${table_mark_hex} lookup ${table_id} >/dev/null 2>&1
     busybox ip -"${ip_version}" route flush table ${table_id} >/dev/null 2>&1
+    appname=$(echo "$js_SETTING" | jq -r '.app.name')
     # shellcheck disable=SC3037
-    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица IPv${ip_version} маршрута для Swave успешна удалена" >&2
+    debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Таблица IPv${ip_version} маршрута для ${appname} успешна удалена" >&2
   fi
 }
 
@@ -727,18 +727,25 @@ firewall_ip6tables(){
 # Менеджер команд
 case $ACTION in
   start)
+      if [ "$ENABLED" != yes ]; then
+        name_client=$(echo "$js_SETTING" | jq -r '.client.name')
+        echo -e " ${name_client} ${color_green}Отключён в файле \"$(basename "$0")\"${color_reset}"
+		    return 1
+	    fi
       if [ "$CALLER" = "cron" -a "$ENABLED" != yes ]; then
-          return 8
-       fi
+		    return 8
+	    fi
       if is_running; then
-          echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
-          return 1
-       fi
+		    echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
+		    return 1
+	    fi
       kernel_modules_load
       wait_for_iptables_tables 20 || exit 1
+      check_iptables_tproxy || exit 1
       policy_mark=$(get_policy_mark) || {
+      policy=$(echo "$js_SETTING" | jq -r '.network.connection_policy')
       # shellcheck disable=SC3037
-      echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_yellow}[INFO]${color_reset} Добавьте политику Swave на вашем роутере " >&2
+      echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_yellow}[INFO]${color_reset} Добавьте политику ${policy} на вашем роутере " >&2
       exit 1
       }
       firewall_iptables
@@ -752,7 +759,7 @@ case $ACTION in
       } >> "${LOG_FILE}" 2>&1 &
       # Небольшая задержка для проверки, что процесс запустился
       sleep 4
-      if pgrep -f "sing-box run" > /dev/null; then
+      if is_running; then
           echo -e " ${name_client} ${color_green}успешно запущен${color_reset}"
           logger -t "$(basename "$0")" "${name_client} успешно запущен"
       else
@@ -772,7 +779,7 @@ case $ACTION in
       ;;
   status)
       name_client=$(echo "$js_SETTING" | jq -r '.client.name')
-      if pgrep -f "${name_client} run" > /dev/null; then
+      if is_running; then
         echo -e " ${name_client} ${color_green}запущен${color_reset}"
       else
         echo -e " ${name_client} ${color_red}отключён${color_reset}"
@@ -786,16 +793,24 @@ case $ACTION in
       "$0" start
       ;;
   firewall_iptables_nat)
-      firewall_iptables_nat
+      if is_running; then
+        firewall_iptables_nat
+	    fi
       ;;
   firewall_iptables_mangle)
-      firewall_iptables_mangle
+      if is_running; then
+        firewall_iptables_mangle
+      fi
       ;;
   firewall_ip6tables_nat)
-      firewall_ip6tables_nat
+      if is_running; then
+        firewall_ip6tables_nat
+      fi
       ;;
   firewall_ip6tables_mangle)
-      firewall_ip6tables_mangle
+      if is_running; then
+        firewall_ip6tables_mangle
+      fi
       ;;
   *)
       echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
