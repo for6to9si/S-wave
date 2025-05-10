@@ -1,4 +1,4 @@
-name: Build sing-box IPK packages
+name: Build xray IPK packages
 
 on:
   workflow_dispatch:
@@ -24,86 +24,86 @@ jobs:
       matrix:
         arch: [arm64, mipsle]
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up environment
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y tar gzip jq
+      - name: Set up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tar gzip jq fakeroot
 
-    - name: Determine version
-      id: version
-      run: |
-        VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-        echo "version=${VERSION}" >> $GITHUB_OUTPUT
-        echo "Using version: ${VERSION}"
+      - name: Determine version
+        id: version
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Using version: ${VERSION}"
 
-    - name: Download sing-box
-      run: |
-        wget https://github.com/SagerNet/sing-box/releases/download/v${{ steps.version.outputs.version }}/sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+      - name: Download sing-box
+        run: |
+          wget https://github.com/SagerNet/sing-box/releases/download/v${{ steps.version.outputs.version }}/sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
 
-    - name: Create IPK package structure
-      run: |
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/sing-box/configs
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/var/log/swave
-        mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL
+      - name: Create IPK package structure
+        run: |
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/sing-box/configs
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/var/log/swave
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL
+  
+          tar -xzf sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz -C sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin --strip-components=1
+  
+  
+          cp ./etc/init.d/S99sing-box sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
+          chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
+  
+          cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/control <<EOF
+          Package: sing-box
+          Depends: libc,libssp,librt,libpthread,libpthread,jq,iptables,ca-certificates
+          Version: ${{ steps.version.outputs.version }}
+          Architecture: mipsel-3.4
+          Section: net
+          Description: A minimalistic tool to automate Sing-box setup on Keenetic router systems..
+          License: GPL-3.0 license
+          Maintainer: for6to9si <for6to9si@gmail.com>
+          EOF
+          
+          cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
+          chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
+          cp ./etc/swave/settings.json sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
 
-        tar -xzf sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz -C sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin --strip-components=1
+      - name: Include sing-box license and copyright
+        run: |
+          cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          cp opt/sbin/LICENSE CONTROL/
+          mv opt/sbin/LICENSE opt/etc/sing-box/
+          cd /
 
+      - name: Package IPK
+        run: |
+          cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          fakeroot tar -czf ../data.tar.gz ./opt/sbin ./opt/etc ./opt/var/log/swave
+          cd ./CONTROL
+          fakeroot tar -czf ../../control.tar.gz *
+          cd ..
+          echo "2.0" > ../debian-binary
+          cd ..
+          fakeroot tar -czf sing-box_${{ steps.version.outputs.version }}_${{ matrix.arch }}.ipk ./debian-binary ./control.tar.gz ./data.tar.gz
 
-        cp ./etc/init.d/S99sing-box sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
-        chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
+      - name: Store build timestamp
+        run: echo "BUILD_TIME=$(date +'%T')" >> $GITHUB_ENV
 
-        cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/control <<EOF
-        Package: sing-box
-        Depends: libc,libssp,librt,libpthread,libpthread,jq,iptables,ca-certificates
-        Version: ${{ steps.version.outputs.version }}
-        Architecture: mipsel-3.4
-        Section: net
-        Description: A minimalistic tool to automate Sing-box setup on Keenetic router systems..
-        License: GPL-3.0 license
-        Maintainer: for6to9si <for6to9si@gmail.com>
-        EOF
-        
-        cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
-        chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
-        cp ./etc/swave/settings.json sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
+      - name: Deploy using stored timestamp
+        run: echo "Deploying at $BUILD_TIME"
 
-    - name: Include sing-box license and copyright
-      run: |
-        cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
-        cp opt/sbin/LICENSE CONTROL/
-        mv opt/sbin/LICENSE opt/etc/sing-box/
-        cd /
-
-    - name: Package IPK
-      run: |
-        cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
-        tar -czf ../data.tar.gz ./opt/sbin ./opt/etc ./opt/var/log/swave
-        cd ./CONTROL
-        tar -czf ../../control.tar.gz *
-        cd ..
-        echo "2.0" > ../debian-binary
-        cd ..
-        tar -czf sing-box_${{ steps.version.outputs.version }}_${{ matrix.arch }}.ipk ./debian-binary ./control.tar.gz ./data.tar.gz
-
-    - name: Store build timestamp
-      run: echo "BUILD_TIME=$(date +'%T')" >> $GITHUB_ENV
-
-    - name: Deploy using stored timestamp
-      run: echo "Deploying at $BUILD_TIME"
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: sing-box-${{ matrix.arch }}
-        path: ./*.ipk
-        if-no-files-found: error
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sing-box-${{ matrix.arch }}
+          path: ./*.ipk
+          if-no-files-found: error
 
   deploy-repository:
     runs-on: ubuntu-latest
