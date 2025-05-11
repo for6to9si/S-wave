@@ -1,4 +1,4 @@
-name: Build xray IPK packages
+name: Build sing-box IPK packages
 
 on:
   workflow_dispatch:
