@@ -150,6 +150,7 @@ wait_for_iptables_tables() {
     INTERVAL=1
     ELAPSED=0
     client=$(echo "$js_SETTING" | jq -r '.client.name')
+    policy=$(echo "$js_SETTING" | jq -r '.network.connection_policy')
     logger -t "$(basename "$0")" "[${client}] Ожидание доступности iptables (таблицы nat и mangle)..."
 
     while :; do
@@ -178,7 +179,7 @@ wait_for_iptables_tables() {
         if $NAT_READY && $MANGLE_READY && $MULTIPORT_READY; then
             logger -t "$(basename "$0")" "[${client}] iptables: nat, mangle и multiport доступны"
             if ip rule show | grep -q "fwmark $(get_policy_mark)"; then
-              logger -t "$(basename "$0")" "[${client}] требуемая политика $(get_policy_mark) на роутере присутствует и корректно настроена"
+              logger -t "$(basename "$0")" "[${client}] требуемая политика ${policy} на роутере присутствует и корректно настроена"
               return 0
             fi
         fi
@@ -191,9 +192,6 @@ wait_for_iptables_tables() {
         fi
     done
 }
-
-
-
 
 init_ip_rules() {
 
@@ -774,8 +772,6 @@ case $ACTION in
       echo -e "$(date '+%Y-%m-%d %H:%M:%S') ${color_yellow}[INFO]${color_reset} Добавьте политику ${policy} на вашем роутере " >&2
       exit 1
       }
-      firewall_iptables
-      [ "$IPv6" = "true" ] && firewall_ip6tables
       name_client=$(echo "$js_SETTING" | jq -r '.client.name')
       echo -e " ${name_client} ${color_green}запускается...${color_reset}"
       export SSL_CERT_DIR=/opt/etc/ssl/certs
@@ -783,15 +779,23 @@ case $ACTION in
           echo -e "\n=== $(date) === sing-box client info ==="
           sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"
       } >> "${LOG_FILE}" 2>&1 &
-      # Небольшая задержка для проверки, что процесс запустился
-      sleep 4
-      if is_running; then
-          echo -e " ${name_client} ${color_green}успешно запущен${color_reset}"
-          logger -t "$(basename "$0")" "${name_client} успешно запущен"
+
+      if [ -t 0 ]; then
+        # Небольшая задержка для проверки, что процесс запустился
+        sleep 4
+        if is_running; then
+            echo -e " ${name_client} ${color_green}успешно запущен${color_reset}"
+            logger -t "$(basename "$0")" "${name_client} успешно запущен"
+        else
+            echo -e " ${name_client} ${color_red}не удалось запустить${color_reset}"
+            logger -t "$(basename "$0")" "${name_client} не удалось запустить"
+        fi
+        firewall_iptables
+        [ "$IPv6" = "true" ] && firewall_ip6tables
       else
-          echo -e " ${name_client} ${color_red}не удалось запустить${color_reset}"
-          logger -t "$(basename "$0")" "${name_client} не удалось запустить"
+           logger -t "$(basename "$0")" "${name_client} is set up for background launch via init/rc."
       fi
+
       ;;
   stop)
       del_ip_rules 4
