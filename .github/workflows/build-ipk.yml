@@ -114,33 +114,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read version from VERSION file
+      - name: Read version from S99sing-box file
         id: generate_tag
         run: |
-          get_clean_json() {
-            awk '
-            BEGIN { in_string = 0 }
-            {
-              line = $0
-              result = ""
-              for (i = 1; i <= length(line); i++) {
-              char = substr(line, i, 1)
-              next_char = substr(line, i+1, 1)
-              if (char == "\"" && prev != "\\") {
-              in_string = !in_string
-            }
-              if (!in_string && char == "/" && next_char == "/") {
-              break
-            }
-              result = result char
-              prev = char
-            }
-              print result
-            }' "$1"
-          }
-          
-          js_SETTING=$(get_clean_json etc/swave/settings.json | jq -c '.' 2>/dev/null)
-          TAG_NAME="v$(echo "$js_SETTING" | jq -r '.app.version')"
+          VERSION_LINE=$(grep -E '^# @version:' ./etc/init.d/S99sing-box || true)
+          if [ -z "$VERSION_LINE" ]; then
+            echo "Version not found!" >&2
+            exit 1
+          fi
+          TAG_NAME="v$(echo "$VERSION_LINE" | sed -E 's/^# @version:[[:space:]]*//')"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Create Git tag and push
