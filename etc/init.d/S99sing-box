@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.17
+# @version: 0.0.18
 
 
 ENABLED=yes
@@ -243,7 +243,7 @@ init_ip_rules() {
     if [ -n "${policy_table}" ]; then
       busybox ip -"${ip_version}" route show table "${policy_table}" | grep -Ev '^default' |
       while IFS= read -r route; do
-        matching_main_route=$(busybox ip -"${ip_version}" route show table "${policy_table}" | grep -F "${route}" || true)
+        matching_main_route=$(busybox ip -"${ip_version}" route show table main | grep -F "${route}" || true)
 
         if [ -n "${matching_main_route}" ]; then
           busybox ip -"${ip_version}" route add table "${table_id}" ${matching_main_route} >/dev/null 2>&1
