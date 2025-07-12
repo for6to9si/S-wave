@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.23
+# @version: 0.0.24
 
 
 ENABLED=yes
@@ -879,6 +879,18 @@ case $ACTION in
       if is_running; then
         firewall_ip6tables_mangle
       fi
+      ;;
+  fast_restart)
+      busybox killall -q -9 "$(echo "$js_SETTING" | jq -r '.client.name')"
+      "$0" status
+      name_client=$(echo "$js_SETTING" | jq -r '.client.name')
+      echo -e " ${name_client} ${color_green}запускается...${color_reset}"
+      export SSL_CERT_DIR=/opt/etc/ssl/certs
+      {
+          echo -e "\n=== $(date) === sing-box client info ==="
+          sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"
+      } >> "${LOG_FILE}" 2>&1 &
+      "$0" status
       ;;
   *)
       echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
