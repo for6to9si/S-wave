@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.27
+# @version: 0.0.28
 
 
 ENABLED=yes
@@ -467,8 +467,7 @@ init_exclusions_ip(){
     # Проверка наличия цепочек и включенного dns_filter
     if [ "${1}" = "iptables" ] \
     && [ "${2}" = "nat" ] \
-    && iptables -t nat -nL "${3}" >/dev/null 2>&1 \
-    && echo "$js_SETTING" | jq -e '.network.dns_filter == true' >/dev/null
+    && iptables -t nat -nL "${3}" >/dev/null 2>&1
     then
         # IPv4
         for ip in $(echo "$js_SETTING" | jq -r '.network.IPv4_exclusions[]'); do
@@ -483,8 +482,7 @@ init_exclusions_ip(){
 
     if [ "${1}" = "iptables" ] \
     && [ "${2}" = "mangle" ] \
-    && iptables -t mangle -nL "${3}" >/dev/null 2>&1 \
-    && echo "$js_SETTING" | jq -e '.network.dns_filter == true' >/dev/null
+    && iptables -t mangle -nL "${3}" >/dev/null 2>&1
     then
         # IPv4
         for ip in $(echo "$js_SETTING" | jq -r '.network.IPv4_exclusions[]'); do
@@ -499,8 +497,7 @@ init_exclusions_ip(){
 
     if [ "${1}" = "ip6tables" ] \
     && [ "${2}" = "nat" ] \
-    && ip6tables -t nat -nL "${3}" >/dev/null 2>&1 \
-    && echo "$js_SETTING" | jq -e '.network.dns_filter == true' >/dev/null
+    && ip6tables -t nat -nL "${3}" >/dev/null 2>&1
     then
         # Проверка, разрешён ли IPv6
 
@@ -518,8 +515,7 @@ init_exclusions_ip(){
 
     if [ "${1}" = "ip6tables" ] \
     && [ "${2}" = "mangle" ] \
-    && ip6tables -t mangle -nL "${3}" >/dev/null 2>&1 \
-    && echo "$js_SETTING" | jq -e '.network.dns_filter == true' >/dev/null
+    && ip6tables -t mangle -nL "${3}" >/dev/null 2>&1
     then
         # Проверка, разрешён ли IPv6
 
@@ -568,6 +564,8 @@ get_exclude_ip4() {
 
 add_ipv4tables_exclusions() {
 
+    return 0
+
     # Проверяем существование цепочки перед началом работы
     if ! check_chain_ipv4 "${1}" "${2}"; then
         exit 1
@@ -608,7 +606,7 @@ add_ipv4tables_exclusions() {
         [ -z "$ip" ] && continue  # Пропускаем пустые строки
 
         if [ "${2}" = "mangle" ] \
-        && echo "$js_SETTING" | jq -e '.network.dns_filter' > /dev/null
+        && echo "$js_SETTING" | jq -e '.network.dns_filter  // false' > /dev/null
         then
           # Проверяем, не существует ли правило уже
           if ! iptables -w -t "${2}" -C "${1}" -d "$ip" -p udp -m udp ! --dport 53  -j RETURN >/dev/null 2>&1; then
@@ -659,6 +657,8 @@ get_exclude_ip6() {
 
 add_ipv6tables_exclusions() {
 
+    return 0
+
     # Проверяем существование цепочки перед началом работы
     if ! check_chain_ipv6 "${1}" "${2}"; then
         exit 1
@@ -689,7 +689,7 @@ add_ipv6tables_exclusions() {
         [ -z "$ip" ] && continue  # Пропускаем пустые строки
 
         if [ "${2}" = "mangle" ] \
-        && echo "$js_SETTING" | jq -e '.network.dns_filter' > /dev/null
+        && echo "$js_SETTING" | jq -e '.network.dns_filter // false' > /dev/null
         then
           # Проверяем, не существует ли правило уже
           if ! ip6tables -w -t "${2}" -C "${1}" -d "$ip" -p udp -m udp ! --dport 53  -j RETURN >/dev/null 2>&1; then
@@ -724,7 +724,7 @@ init_tables_nat(){
     echo "Ошибка: Нет портов в port_forwarding_list!" >&2
     exit 1
     fi
-    if echo "$js_SETTING" | jq -e '.network.dns_filter' > /dev/null; then
+    if echo "$js_SETTING" | jq -e '.network.dns_filter // false' > /dev/null; then
     port_list="53,${port_list}"
     fi
     # Безопасно достаём диапазоны портов или пустой список
@@ -770,7 +770,7 @@ init_tables_mangle(){
     echo "Ошибка: Нет портов в port_forwarding_list!" >&2
     exit 1
     fi
-    if echo "$js_SETTING" | jq -e '.network.dns_filter' > /dev/null; then
+    if echo "$js_SETTING" | jq -e '.network.dns_filter // false' > /dev/null; then
     port_list="53,${port_list}"
     fi
     # Безопасно достаём диапазоны портов или пустой список
@@ -785,7 +785,7 @@ init_tables_mangle(){
       "${family}" -w -t mangle -N ${chain_name}
       debug "#PREROUTING MANGLE ($family)"
       "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports  ${port_list} -j ${chain_name} >> "${LOG_FILE}" 2>&1
-      "${family}" -w -t mangle -A PREROUTING -m connmark ! --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports 53 -j ${chain_name} >> "${LOG_FILE}" 2>&1
+      #"${family}" -w -t mangle -A PREROUTING -m connmark ! --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp -m multiport --dports 53 -j ${chain_name} >> "${LOG_FILE}" 2>&1
       echo "$port_ranges" | while read -r range; do
         [ -n "$range" ] || continue
         "${family}" -w -t mangle -A PREROUTING -m connmark --mark ${policy_mark} -m conntrack ! --ctstate INVALID -p udp --dport "$range" -j ${chain_name}
@@ -947,7 +947,6 @@ case $ACTION in
       "$0" status
       start_singbox
       "$0" status
-      ;;
       ;;
   *)
       echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
