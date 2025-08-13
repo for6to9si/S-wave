@@ -2,7 +2,8 @@
   "client":
   {
     "name": "sing-box",
-    "path_config": "/opt/etc/sing-box/configs"
+    "path_config": "/opt/etc/sing-box/configs",
+    "lockFile": "/opt/tmp/singbox-swave.lock"
   },
   "app":
   {

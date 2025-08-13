@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.24
+# @version: 0.0.25
 
 
 ENABLED=yes
@@ -114,14 +114,80 @@ ACTION=$1
 CALLER=$2
 
 
+# Проверка, запущен ли процесс для данной конфигурации
 is_running() {
-	PID_RUNNING=$(pgrep -nx "$PROCS" 2>/dev/null)
+    LOCK_FILE=$(echo "$js_SETTING" | jq -r '.client.lockFile // "/opt/tmp/singbox-swave.lock"')
+    # Проверяем наличие файла блокировки
+    if [ -f "$LOCK_FILE" ]; then
+        PID=$(cat "$LOCK_FILE" 2>/dev/null)
+        if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+            return 0 # Процесс существует
+        else
+            # Удаляем устаревший файл блокировки
+            rm -f "$LOCK_FILE"
+        fi
+    fi
+    return 1 # Процесс не запущен
+}
 
-	if [ -z "$PID_RUNNING" ]; then
-		return 1
-	fi
+# Создание файла блокировки с PID
+create_lock_file() {
+    LOCK_FILE=$(echo "$js_SETTING" | jq -r '.client.lockFile // "/opt/tmp/singbox-swave.lock"')
+    # Извлекаем LOCK_DIR из LOCK_FILE
+    LOCK_DIR=$(dirname "$LOCK_FILE")
+    pid=$1
+    mkdir -p "$LOCK_DIR" || {
+        debug "Ошибка: Не удалось создать директорию $LOCK_DIR"
+        exit 1
+    }
+    echo "$pid" > "$LOCK_FILE" || {
+        debug "Ошибка: Не удалось записать PID в $LOCK_FILE"
+        exit 1
+    }
+}
 
-	return 0
+start_singbox() {
+    LOCK_FILE=$(echo "$js_SETTING" | jq -r '.client.lockFile // "/opt/tmp/singbox-swave.lock"')
+    if is_running; then
+        PID=$(cat "$LOCK_FILE")
+        debug "Sing-box уже запущен для конфигурации S-wave (PID: $PID)"
+        exit 1
+    fi
+
+    export SSL_CERT_DIR=/opt/etc/ssl/certs
+
+    # Записываем информацию в лог и запускаем sing-box
+    {
+        echo -e "\n=== $(date) === sing-box client info ==="
+        sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"
+    } >> "${LOG_FILE}" 2>&1 &
+    SINGBOX_PID=$!
+    # sing-box
+
+    if ! kill -0 "$SINGBOX_PID" 2>/dev/null; then
+        debug "Ошибка: Не удалось запустить Xray"
+        exit 1
+    fi
+
+    create_lock_file "$SINGBOX_PID"
+    debug "Запуск sing-box успешен для конфигурации S-wave (PID: $SINGBOX_PID)"
+}
+
+# Остановка Xray
+stop_singbox() {
+    LOCK_FILE=$(echo "$js_SETTING" | jq -r '.client.lockFile // "/opt/tmp/singbox-swave.lock"')
+    if ! is_running; then
+        debug "Sing-box не запущен для конфигурации S-wave"
+        exit 1
+    fi
+
+    PID=$(cat "$LOCK_FILE")
+    kill "$PID" 2>/dev/null || {
+        debug "Ошибка: Не удалось завершить процесс Sing-box (PID: $PID)"
+        exit 1
+    }
+    rm -f "$LOCK_FILE"
+    debug "Sing-box остановлен для конфигурации S-wave (PID: $PID)"
 }
 
 check_iptables_tproxy() {
@@ -812,11 +878,7 @@ case $ACTION in
       }
       name_client=$(echo "$js_SETTING" | jq -r '.client.name')
       echo -e " ${name_client} ${color_green}запускается...${color_reset}"
-      export SSL_CERT_DIR=/opt/etc/ssl/certs
-      {
-          echo -e "\n=== $(date) === sing-box client info ==="
-          sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"
-      } >> "${LOG_FILE}" 2>&1 &
+      start_singbox
 
       if [ -t 0 ]; then
         firewall_iptables
@@ -842,7 +904,7 @@ case $ACTION in
       chain_name_output="${chain_name}"_out
       del_iptables "${chain_name}"
       del_iptables "${chain_name_output}"
-      busybox killall -q -9 "$(echo "$js_SETTING" | jq -r '.client.name')"
+      stop_singbox
       "$0" status
       ;;
   status)
@@ -881,16 +943,11 @@ case $ACTION in
       fi
       ;;
   fast_restart)
-      busybox killall -q -9 "$(echo "$js_SETTING" | jq -r '.client.name')"
+      stop_singbox
       "$0" status
-      name_client=$(echo "$js_SETTING" | jq -r '.client.name')
-      echo -e " ${name_client} ${color_green}запускается...${color_reset}"
-      export SSL_CERT_DIR=/opt/etc/ssl/certs
-      {
-          echo -e "\n=== $(date) === sing-box client info ==="
-          sing-box run -D /opt/var/sing-box -C "$(echo "$js_SETTING" | jq -r '.client.path_config')"
-      } >> "${LOG_FILE}" 2>&1 &
+      start_singbox
       "$0" status
+      ;;
       ;;
   *)
       echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
