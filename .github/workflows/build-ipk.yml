@@ -85,7 +85,7 @@ jobs:
       - name: Package IPK
         run: |
           cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
-          fakeroot tar -czf ../data.tar.gz ./opt/sbin ./opt/etc ./opt/var/log/swave
+          fakeroot tar -czf ../data.tar.gz ./opt/sbin ./opt/etc ./opt/var/log/swave ./opt/var/log/sing-box
           cd ./CONTROL
           fakeroot tar -czf ../../control.tar.gz *
           cd ..
