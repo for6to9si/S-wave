@@ -51,6 +51,7 @@ jobs:
           mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/sing-box/configs
           mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave
           mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/var/log/swave
+          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/var/log/sing-box
           mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL
   
           tar -xzf sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz -C sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin --strip-components=1
