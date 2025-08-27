@@ -77,7 +77,7 @@ jobs:
 
       - name: Add policy Swave
         run: |
-          cat > xray-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst <<'EOF'
+          cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst <<'EOF'
           #!/bin/sh
           case "$1" in
            configure)
@@ -89,7 +89,7 @@ jobs:
           esac
           exit 0
           EOF
-          chmod 755 xray-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst
+          chmod 755 sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst
 
       - name: Include sing-box license and copyright
         run: |
