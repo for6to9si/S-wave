@@ -75,7 +75,7 @@ jobs:
           chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
           cp ./etc/swave/settings.json sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
 
-      - name: Add policy Swave
+      - name: Add postinst script, add policy Swave
         run: |
           cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst <<'EOF'
           #!/bin/sh
@@ -90,6 +90,20 @@ jobs:
           exit 0
           EOF
           chmod 755 sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst
+
+      - name: Add postrm script
+        run: |
+          cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postrm <<'EOF'
+          #!/bin/sh
+          case "$1" in
+           remove)
+               ndmc -c 'ip no policy Swave'
+               ndmc -c 'system configuration save'
+           ;;
+          esac
+          exit 0
+          EOF
+          chmod 755 sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postrm
 
       - name: Include sing-box license and copyright
         run: |
