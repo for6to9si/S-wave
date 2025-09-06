@@ -61,7 +61,7 @@ jobs:
           chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
   
           cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/control <<EOF
-          Package: sing-box
+          Package: sing-box-tg-installer
           Depends: libc,libssp,librt,libpthread,libpthread,jq,iptables,ca-certificates
           Version: ${{ steps.version.outputs.version }}
           Architecture: mipsel-3.4
