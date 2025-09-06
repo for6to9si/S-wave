@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.31
+# @version: 0.0.32
 
 
 ENABLED=yes
@@ -862,14 +862,16 @@ case $ACTION in
       if [ "$CALLER" = "cron" -a "$ENABLED" != yes ]; then
 		    return 8
 	    fi
-      if is_running; then
-		    echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
-		    return 1
-	    fi
       kernel_modules_load
       check_iptables_tproxy || exit 1
       check_iptables_multiport || exit 1
       wait_for_iptables_tables 20 || exit 1
+
+      if is_running; then
+		    echo -e "$PROCS ${color_green} is already running ${color_reset}" >&2
+		    return 1
+	    fi
+
       policy_mark=$(get_policy_mark) || {
       policy=$(echo "$js_SETTING" | jq -r '.network.connection_policy')
       # shellcheck disable=SC3037
