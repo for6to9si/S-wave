@@ -64,10 +64,24 @@ jobs:
 
       - name: Download Sing-box
         run: |
-          wget https://github.com/SagerNet/sing-box/releases/download/v${{ matrix.version }}/sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz
+          url="https://github.com/SagerNet/sing-box/releases/download/v${{ matrix.version }}/sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz"
+          echo "Trying to download $url"
+
+          if curl --head --silent --fail "$url" > /dev/null; then
+            wget -q "$url"
+          else
+            echo "No release found for version=${{ matrix.version }}, arch=${{ matrix.arch }} — skipping"
+            exit 0
+          fi
+
 
       - name: Create IPK package structure
         run: |
+          if [ ! -f "sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz" ]; then
+            echo "Archive not found, skipping IPK build for ${{ matrix.version }} ${{ matrix.arch }}"
+            exit 0
+          fi
+
           mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/sbin
           mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d
           mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/init.d
@@ -85,8 +99,8 @@ jobs:
           # Маппинг arch → Architecture
           case "${{ matrix.arch }}" in
             arm64) arch_pkg="aarch64-3.10" ;;
-            mipsle)  arch_pkg="mipsel-3.4" ;;
-            *)         arch_pkg="${{ matrix.arch }}" ;; # fallback
+            mipsle) arch_pkg="mipsel-3.4" ;;
+            *) arch_pkg="${{ matrix.arch }}" ;; # fallback
           esac
           
           cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/control <<EOF
