@@ -3,9 +3,9 @@ name: Build sing-box IPK packages
 on:
   workflow_dispatch:
     inputs:
-      prerelease:
-        description: 'Is this a prerelease?'
-        required: true
+      copy:
+        description: 'Build all releases'
+        required: false
         default: 'false'
         type: choice
         options:
@@ -18,11 +18,39 @@ permissions:
   id-token: write
 
 jobs:
+  prepare-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.set-versions.outputs.versions }}
+    steps:
+      - name: Determine versions
+        id: set-versions
+        run: |
+          if [ "${{ github.event.inputs.copy }}" = "true" ]; then
+            versions=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases \
+              | jq -r '.[] | select(.prerelease == false) | .tag_name' \
+              | grep '^v[0-9]\+' \
+              | sed 's/^v//' \
+              | awk -F. '($1 >= 1) || ($1 == 1 && $2 >= 4)' \
+              | sort -V)
+
+            # Преобразуем список в JSON-массив одной строкой
+            versions_json=$(echo "$versions" | jq -R . | jq -s -c .)
+          else
+            latest=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+            versions_json=$(echo "[\"$latest\"]")
+          fi
+
+          echo "Building versions: $versions_json"
+          echo "versions=$versions_json" >> $GITHUB_OUTPUT
+
   build-ipk:
+    needs: prepare-versions
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [arm64, mipsle]
+        version: ${{ fromJson(needs.prepare-versions.outputs.versions) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,52 +60,52 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y tar gzip jq fakeroot
 
-      - name: Determine version
-        id: version
+      - name: Download Sing-box
         run: |
-          VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name' | sed 's/^v//')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Using version: ${VERSION}"
-
-      - name: Download sing-box
-        run: |
-          wget https://github.com/SagerNet/sing-box/releases/download/v${{ steps.version.outputs.version }}/sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+          wget https://github.com/SagerNet/sing-box/releases/download/v${{ matrix.version }}/sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz
 
       - name: Create IPK package structure
         run: |
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/sing-box/configs
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/var/log/swave
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/var/log/sing-box
-          mkdir -p sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL
-  
-          tar -xzf sing-box-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz -C sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/sbin --strip-components=1
-  
-  
-          cp ./etc/init.d/S99sing-box sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
-          chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
-  
-          cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/control <<EOF
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/sbin
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/init.d
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/sing-box/configs
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/swave
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/var/log/swave
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/var/log/sing-box
+          mkdir -p sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL
+          
+          tar -xzf sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz -C sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/sbin --strip-components=1
+          
+          cp ./etc/init.d/S99sing-box sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
+          chmod +x sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/init.d/S99sing-box
+          
+          # Маппинг arch → Architecture
+          case "${{ matrix.arch }}" in
+            arm64) arch_pkg="aarch64-3.10" ;;
+            mipsle)  arch_pkg="mipsel-3.4" ;;
+            *)         arch_pkg="${{ matrix.arch }}" ;; # fallback
+          esac
+          
+          cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/control <<EOF
           Package: sing-box-tg-installer
           Depends: libc,libssp,librt,libpthread,libpthread,jq,iptables,ca-certificates
-          Version: ${{ steps.version.outputs.version }}
-          Architecture: mipsel-3.4
+          Version: ${{ matrix.version }}
+          Architecture: $arch_pkg
           Section: net
+          URL: https://sing-box.sagernet.org/
           Description: A minimalistic tool to automate Sing-box setup on Keenetic router systems..
           License: GPL-3.0 license
           Maintainer: for6to9si <for6to9si@gmail.com>
           EOF
           
-          cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
-          chmod +x sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
-          cp ./etc/swave/settings.json sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
+          cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
+          chmod +x sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
+          cp ./etc/swave/settings.json sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
 
       - name: Add postinst script, add policy Swave
         run: |
-          cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst <<'EOF'
+          cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postinst <<'EOF'
           #!/bin/sh
           case "$1" in
            configure)
@@ -89,11 +117,11 @@ jobs:
           esac
           exit 0
           EOF
-          chmod 755 sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postinst
+          chmod 755 sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postinst
 
       - name: Add postrm script
         run: |
-          cat > sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postrm <<'EOF'
+          cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postrm <<'EOF'
           #!/bin/sh
           case "$1" in
            remove)
@@ -103,36 +131,30 @@ jobs:
           esac
           exit 0
           EOF
-          chmod 755 sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}/CONTROL/postrm
+          chmod 755 sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postrm
 
       - name: Include sing-box license and copyright
         run: |
-          cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          cd sing-box-${{ matrix.version }}-${{ matrix.arch }}
           cp opt/sbin/LICENSE CONTROL/
           mv opt/sbin/LICENSE opt/etc/sing-box/
           cd /
 
       - name: Package IPK
         run: |
-          cd sing-box-${{ steps.version.outputs.version }}-${{ matrix.arch }}
+          cd sing-box-${{ matrix.version }}-${{ matrix.arch }}
           fakeroot tar -czf ../data.tar.gz ./opt/sbin ./opt/etc ./opt/var/log/swave ./opt/var/log/sing-box
           cd ./CONTROL
           fakeroot tar -czf ../../control.tar.gz *
           cd ..
           echo "2.0" > ../debian-binary
           cd ..
-          fakeroot tar -czf sing-box_${{ steps.version.outputs.version }}_${{ matrix.arch }}.ipk ./debian-binary ./control.tar.gz ./data.tar.gz
-
-      - name: Store build timestamp
-        run: echo "BUILD_TIME=$(date +'%T')" >> $GITHUB_ENV
-
-      - name: Deploy using stored timestamp
-        run: echo "Deploying at $BUILD_TIME"
+          fakeroot tar -czf sing-box_${{ matrix.version }}_${{ matrix.arch }}.ipk ./debian-binary ./control.tar.gz ./data.tar.gz
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sing-box-${{ matrix.arch }}
+          name: sing-box-${{ matrix.version }}-${{ matrix.arch }}
           path: ./*.ipk
           if-no-files-found: error
 
@@ -145,37 +167,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Read version from S99sing-box file
-        id: generate_tag
-        run: |
-          VERSION_LINE=$(grep -E '^# @version:' ./etc/init.d/S99sing-box || true)
-          if [ -z "$VERSION_LINE" ]; then
-            echo "Version not found!" >&2
-            exit 1
-          fi
-          TAG_NAME="v$(echo "$VERSION_LINE" | sed -E 's/^# @version:[[:space:]]*//')"
-          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
-
-      - name: Create Git tag and push
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git tag ${{ steps.generate_tag.outputs.tag_name }}
-          git push origin ${{ steps.generate_tag.outputs.tag_name }}
-
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Create release and upload artifacts (signed)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate changelog
         run: |
-          TAG=${{ steps.generate_tag.outputs.tag_name }}
-
           # Найдём предыдущий тег по дате создания
-          PREV_TAG=$(git tag --sort=-creatordate | grep -v "^${TAG}$" | head -n 1 || echo "")
+          PREV_TAG=$(git tag --sort=-creatordate | tail -n 2 | head -n 1 || echo "")
 
           if [ -z "$PREV_TAG" ]; then
             echo "No previous tag found. Logging all history."
@@ -184,21 +184,33 @@ jobs:
             echo "Generating changelog from $PREV_TAG to HEAD"
             git log "$PREV_TAG"..HEAD --pretty=format:'- [%h](https://github.com/${{ github.repository }}/commit/%H): %s' > changelog.txt
           fi
+          
+          #echo "Copied build from XTLS/Sing-box" > changelog.txt
 
           echo "Changelog:"
           cat changelog.txt
 
-          if [ "${{ github.event.inputs.prerelease }}" = "true" ]; then
-            gh release create "$TAG" artifacts/sing-box-*/sing-box_*.ipk \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Release $TAG" \
-            --notes-file changelog.txt \
-            --prerelease
-          else
-            gh release create "$TAG" artifacts/sing-box-*/sing-box_*.ipk \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Release $TAG" \
-            --notes-file changelog.txt
-          fi
+      - name: Create releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Группируем артефакты по версии
+          for ver in $(ls artifacts/*/sing-box_*.ipk | sed -E 's/.*sing-box_([0-9.]+)_.*/\1/' | sort -u); do
+            tag="v$ver"
+            files=$(ls artifacts/*/sing-box_${ver}_*.ipk)
 
+            echo "Creating release $tag with files: $files"
+
+            if [ "${{ github.event.inputs.copy }}" = "true" ]; then
+              gh release create "$tag" $files \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "Release $tag (copied)" \
+                --notes-file changelog.txt || echo "Release $tag already exists"
+            else
+              gh release create "$tag" $files \
+                --repo "$GITHUB_REPOSITORY" \
+                --title "Release $tag" \
+                --notes-file changelog.txt || echo "Release $tag already exists"
+            fi
+          done
 
