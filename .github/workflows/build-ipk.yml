@@ -27,7 +27,7 @@ jobs:
         id: set-versions
         run: |
           if [ "${{ github.event.inputs.copy }}" = "true" ]; then
-            versions=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases \
+            versions=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=100" \
               | jq -r '.[] | select(.prerelease == false) | .tag_name' \
               | grep '^v[0-9]\+' \
               | sed 's/^v//' \
@@ -36,7 +36,7 @@ jobs:
 
             versions_json=$(echo "$versions" | jq -R . | jq -s -c .)
           else
-            latest=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest \
+            latest=$(curl -s "https://api.github.com/repos/SagerNet/sing-box/releases/latest" \
               | jq -r 'select(.prerelease == false) | .tag_name' \
               | sed 's/^v//')
             versions_json=$(echo "[\"$latest\"]")
@@ -44,6 +44,7 @@ jobs:
 
           echo "Building versions: $versions_json"
           echo "versions=$versions_json" >> $GITHUB_OUTPUT
+
 
   build-ipk:
     needs: prepare-versions
