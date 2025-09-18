@@ -209,7 +209,7 @@ jobs:
             git log "$PREV_TAG"..HEAD --pretty=format:'- [%h](https://github.com/${{ github.repository }}/commit/%H): %s' > changelog.txt
           fi
           
-          echo "Copied build from XTLS/Sing-box" > changelog.txt
+          #echo "Copied build from XTLS/Sing-box" > changelog.txt
 
           echo "Changelog:"
           cat changelog.txt
