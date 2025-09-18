@@ -31,7 +31,7 @@ jobs:
               | jq -r '.[] | select(.prerelease == false) | .tag_name' \
               | grep '^v[0-9]\+' \
               | sed 's/^v//' \
-              | awk -F. '($1 > 1) || ($1 == 1 && $2 >= 4)' \
+              | awk -F. '($1 > 1) || ($1 == 1 && $2 >= 10)' \
               | sort -V)
 
             versions_json=$(echo "$versions" | jq -R . | jq -s -c .)
