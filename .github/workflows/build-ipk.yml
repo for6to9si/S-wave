@@ -63,19 +63,22 @@ jobs:
           sudo apt-get install -y tar gzip jq fakeroot
 
       - name: Download Sing-box
+        id: download
         run: |
           url="https://github.com/SagerNet/sing-box/releases/download/v${{ matrix.version }}/sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz"
           echo "Trying to download $url"
 
           if curl --head --silent --fail "$url" > /dev/null; then
             wget -q "$url"
+            echo "found=true" >> $GITHUB_OUTPUT
           else
-            echo "No release found for version=${{ matrix.version }}, arch=${{ matrix.arch }} — skipping"
-            exit 0
+            echo "No release found for version=${{ matrix.version }}, arch=${{ matrix.arch }}"
+            echo "found=false" >> $GITHUB_OUTPUT
           fi
 
 
       - name: Create IPK package structure
+        if: steps.download.outputs.found == 'true'
         run: |
           if [ ! -f "sing-box-${{ matrix.version }}-linux-${{ matrix.arch }}.tar.gz" ]; then
             echo "Archive not found, skipping IPK build for ${{ matrix.version }} ${{ matrix.arch }}"
@@ -120,6 +123,7 @@ jobs:
           cp ./etc/swave/settings.json sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
 
       - name: Add postinst script, add policy Swave
+        if: steps.download.outputs.found == 'true'
         run: |
           cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postinst <<'EOF'
           #!/bin/sh
@@ -136,6 +140,7 @@ jobs:
           chmod 755 sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postinst
 
       - name: Add postrm script
+        if: steps.download.outputs.found == 'true'
         run: |
           cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postrm <<'EOF'
           #!/bin/sh
@@ -150,6 +155,7 @@ jobs:
           chmod 755 sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/postrm
 
       - name: Include sing-box license and copyright
+        if: steps.download.outputs.found == 'true'
         run: |
           cd sing-box-${{ matrix.version }}-${{ matrix.arch }}
           cp opt/sbin/LICENSE CONTROL/
@@ -157,6 +163,7 @@ jobs:
           cd /
 
       - name: Package IPK
+        if: steps.download.outputs.found == 'true'
         run: |
           cd sing-box-${{ matrix.version }}-${{ matrix.arch }}
           fakeroot tar -czf ../data.tar.gz ./opt/sbin ./opt/etc ./opt/var/log/swave ./opt/var/log/sing-box
@@ -168,6 +175,7 @@ jobs:
           fakeroot tar -czf sing-box_${{ matrix.version }}_${{ matrix.arch }}.ipk ./debian-binary ./control.tar.gz ./data.tar.gz
 
       - name: Upload artifacts
+        if: steps.download.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: sing-box-${{ matrix.version }}-${{ matrix.arch }}
