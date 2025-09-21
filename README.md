@@ -5,7 +5,7 @@
 роутерах семейства **Keenetic**.
 
 S-wave --- это клон [Kneen](https://github.com/Skrill0/XKeen), но
-адаптированный под **Sing-box**.
+адаптированный под **Sing-box**. Sing-box готовый берется с https://github.com/SagerNet/sing-box/releases с помощью  github action, если подскажите какая версия работает c процесорами mips на Ultra SE (KN-2510), Giga SE (KN-2410), DSL (KN-2010), Skipper DSL (KN-2112), Duo (KN-2110), Ultra SE (KN-2510),  Hopper DSL (KN-3610), добавлю в релиз
 
 ------------------------------------------------------------------------
 
