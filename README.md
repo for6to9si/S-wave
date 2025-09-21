@@ -52,20 +52,12 @@ S-wave --- это клон [Kneen](https://github.com/Skrill0/XKeen), но
 
     /opt/etc/sing-box/configs/config.json
 
-Пример `config.json` с входящими и исходящими соединениями,
-маршрутизацией и логированием:
+Пример `config.json` с входящими и исходящими соединениями, маршрутизацией и логированием:
 
-```{=html}
 <details>
-```
-```{=html}
-<summary>
-```
-Показать пример config.json
-```{=html}
-</summary>
-```
-``` json
+<summary>Показать пример config.json</summary>
+
+```json
 {
   "log": {
     "disabled": false,
@@ -180,9 +172,7 @@ S-wave --- это клон [Kneen](https://github.com/Skrill0/XKeen), но
 }
 ```
 
-```{=html}
 </details>
-```
 
 ------------------------------------------------------------------------
 
