@@ -30,16 +30,16 @@ S-wave --- это клон [Kneen](https://github.com/Skrill0/XKeen), но
         /opt/etc/swave/settings.json
 
     > -   Используется режим **redirect** для TCP (порт `60008`) и
-          >     **tproxy** для UDP (порт `60009`).\
+          >     **tproxy** для UDP (порт `60009`).
     > -   Порты для перенаправления задаются в `port_forwarding_list`
-          >     (по умолчанию: `80, 443, 8080`).\
-    > -   Диапазон портов задаётся параметром `port_forwarding_range`.\
+          >     (по умолчанию: `80, 443, 8080`).
+    > -   Диапазон портов задаётся параметром `port_forwarding_range`.
     > -   `IPv4_exclusions` --- это список IP, которые **не будут
           >     отправляться через VPN** (исключаются из таблицы
-          >     маршрутизации).\
+          >     маршрутизации).
     > -   `"port_redirect": "60008"` --- должен совпадать с параметром в
           >     блоке `inbounds -> "type": "redirect"` файла
-          >     `/opt/etc/sing-box/configs/config.json`.\
+          >     `/opt/etc/sing-box/configs/config.json`.
     > -   `"port_tproxy": "60009"` --- должен совпадать с параметром в
           >     блоке `inbounds -> "type": "tproxy"` файла
           >     `/opt/etc/sing-box/configs/config.json`.
