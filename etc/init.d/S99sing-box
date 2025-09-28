@@ -7,7 +7,7 @@
 #
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Copyright (C) 2024 for6to9si@gmail.com. All rights reserved.
+# Copyright (C) 2025 for6to9si@gmail.com. All rights reserved.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.34
+# @version: 1.0.0
 
 
 ENABLED=yes
@@ -314,30 +314,10 @@ init_ip_rules() {
 
     policy_mark=$(get_policy_mark)
 
-    # Если задан маркер политики, ищем связанную таблицу
-    if [ -n "${policy_mark}" ]; then
-      policy_table=$(busybox ip rule show | awk -v policy="${policy_mark}" '$0 ~ policy && /lookup/ && !/blackhole/ {print $NF}')
-    fi
-
     # Добавляем правило и таблицу маршрутов
     busybox ip -"${ip_version}" rule add fwmark "${table_mark_hex}" lookup "${table_id}" >/dev/null 2>&1
     busybox ip -"${ip_version}" route add local default dev lo table "${table_id}" >/dev/null 2>&1
 
-    # Копируем маршруты
-    if [ -n "${policy_table}" ]; then
-      busybox ip -"${ip_version}" route show table "${policy_table}" | grep -Ev '^default' |
-      while IFS= read -r route; do
-        matching_main_route=$(busybox ip -"${ip_version}" route show table "${policy_table}" | grep -F "${route}" || true)
-
-        if [ -n "${matching_main_route}" ]; then
-          busybox ip -"${ip_version}" route add table "${table_id}" ${matching_main_route} >/dev/null 2>&1
-        else
-          debug "WARN: Маршрут '${route}' не найден в основной таблице" >&2
-        fi
-      done
-    else
-        debug "ERROR: Маршрут не установлен"
-    fi
     appname=$(echo "$js_SETTING" | jq -r '.app.name')
     # shellcheck disable=SC3037
     debug "$(date '+%Y-%m-%d %H:%M:%S') ${color_green}[SUCCESS]${color_reset} Маршрут ${appname} для IPv${ip_version} успешна создана" >&2
