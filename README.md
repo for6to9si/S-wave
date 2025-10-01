@@ -71,10 +71,12 @@ S-wave --- это переделаный клон [Kneen](https://github.com/Skr
 5. **Основные команды управления:**
 
    ```bash
-   /opt/etc/init.d/S99sing-box restart   # Перезапуск sing-box
-   /opt/etc/init.d/S99sing-box status    # Проверка статуса sing-box
-   /opt/etc/init.d/S99sing-box backup    # Создание бэкапа конфигурации
-   /opt/etc/init.d/S99sing-box stop      # Остановка sing-box
+   /opt/etc/init.d/S99sing-box start           # Запуск sing-box
+   /opt/etc/init.d/S99sing-box restart         # Перезапуск sing-box
+   /opt/etc/init.d/S99sing-box fast_restart    # Быстрый перезапуск sing-box без перезапуска таблиц маршрутизации.
+   /opt/etc/init.d/S99sing-box status          # Проверка статуса sing-box
+   /opt/etc/init.d/S99sing-box backup          # Создание бэкапа конфигурации
+   /opt/etc/init.d/S99sing-box stop            # Остановка sing-box
    ```
 
    > ⚠️ При неуспешном запуске проверяйте лог:
