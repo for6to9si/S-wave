@@ -199,7 +199,7 @@ jobs:
       - name: Generate changelog
         run: |
           # Найдём предыдущий тег по дате создания
-          PREV_TAG=$(git tag --sort=creatordate | tail -n 2 | head -n 1 || echo "")
+          PREV_TAG=$(git tag --sort=creatordate | tail -n 1 | head -n 1 || echo "")
 
           if [ -z "$PREV_TAG" ]; then
             echo "No previous tag found. Logging all history."
