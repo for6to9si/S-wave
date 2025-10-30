@@ -120,7 +120,13 @@ jobs:
           
           cp ./etc/ndm/netfilter.d/000-swave.sh sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/
           chmod +x sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/ndm/netfilter.d/000-swave.sh
-          cp ./etc/swave/settings.json sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/swave/example.json
+          cp ./etc/swave/settings.json sing-box-${{ matrix.version }}-${{ matrix.arch }}/opt/etc/swave/settings.json
+
+      - name: Add conffiles
+        run: |
+          cat > sing-box-${{ matrix.version }}-${{ matrix.arch }}/CONTROL/conffiles <<'EOF'
+          /opt/etc/swave/settings.json
+          EOF
 
       - name: Add postinst script, add policy Swave
         if: steps.download.outputs.found == 'true'
