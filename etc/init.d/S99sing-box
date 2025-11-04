@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 1.0.1
+# @version: 1.0.2
 
 
 ENABLED=yes
@@ -372,6 +372,7 @@ backup_config_sing_box() {
     TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
     BACKUP_DIR="${BACKUP_BASE_DIR}/${TIMESTAMP}"
     SETTINGS_FILE="/opt/etc/swave/settings.json"
+    SETTINGS_BACKUP_DIR="${BACKUP_DIR}/swave"
     ARCHIVE_FILE="${BACKUP_BASE_DIR}/sing-box-backup-${TIMESTAMP}.tar.gz"
 
     # Проверяем существование базовой директории
@@ -397,13 +398,18 @@ backup_config_sing_box() {
     # Копируем файлы конфигурации sing-box
     if [ -d "$SOURCE_DIR" ]; then
         cp -r "$SOURCE_DIR/"* "$BACKUP_DIR/" 2>/dev/null
+        echo "Файлы конфигурации из $SOURCE_DIR скопированы."
     else
         echo "Источник $SOURCE_DIR не найден. Пропуск копирования конфигурации sing-box."
     fi
 
-    # Копируем settings.json, если он существует
+    # Создаём поддиректорию для настроек swave
+    mkdir -p "$SETTINGS_BACKUP_DIR"
+
+    # Копируем settings.json отдельно
     if [ -f "$SETTINGS_FILE" ]; then
-        cp "$SETTINGS_FILE" "$BACKUP_DIR/" || echo "Ошибка копирования $SETTINGS_FILE"
+        cp "$SETTINGS_FILE" "$SETTINGS_BACKUP_DIR/" || echo "Ошибка копирования $SETTINGS_FILE"
+        echo "Файл $SETTINGS_FILE сохранён в $SETTINGS_BACKUP_DIR"
     else
         echo "Файл $SETTINGS_FILE не найден. Пропуск."
     fi
