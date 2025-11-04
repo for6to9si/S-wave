@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 1.0.0
+# @version: 1.0.1
 
 
 ENABLED=yes
@@ -367,11 +367,12 @@ del_ip_rules() {
 }
 
 backup_config_sing_box() {
-
     SOURCE_DIR="$(echo "$js_SETTING" | jq -r '.client.path_config')"
     BACKUP_BASE_DIR="/opt/backups/sing-box"
     TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
     BACKUP_DIR="${BACKUP_BASE_DIR}/${TIMESTAMP}"
+    SETTINGS_FILE="/opt/etc/swave/settings.json"
+    ARCHIVE_FILE="${BACKUP_BASE_DIR}/sing-box-backup-${TIMESTAMP}.tar.gz"
 
     # Проверяем существование базовой директории
     if [ ! -d "$BACKUP_BASE_DIR" ]; then
@@ -379,7 +380,10 @@ backup_config_sing_box() {
         echo -n "Хотите создать её? (y/n): "
         read answer
         if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
-            mkdir -p "$BACKUP_BASE_DIR"
+            mkdir -p "$BACKUP_BASE_DIR" || {
+                echo "Не удалось создать директорию $BACKUP_BASE_DIR"
+                return 1
+            }
             echo "Директория создана: $BACKUP_BASE_DIR"
         else
             echo "Операция отменена пользователем."
@@ -390,10 +394,27 @@ backup_config_sing_box() {
     # Создаём папку для нового бэкапа
     mkdir -p "$BACKUP_DIR"
 
-    # Копируем файлы
-    cp -r "$SOURCE_DIR/"* "$BACKUP_DIR/"
+    # Копируем файлы конфигурации sing-box
+    if [ -d "$SOURCE_DIR" ]; then
+        cp -r "$SOURCE_DIR/"* "$BACKUP_DIR/" 2>/dev/null
+    else
+        echo "Источник $SOURCE_DIR не найден. Пропуск копирования конфигурации sing-box."
+    fi
 
-    echo "Бэкап успешно создан в: $BACKUP_DIR"
+    # Копируем settings.json, если он существует
+    if [ -f "$SETTINGS_FILE" ]; then
+        cp "$SETTINGS_FILE" "$BACKUP_DIR/" || echo "Ошибка копирования $SETTINGS_FILE"
+    else
+        echo "Файл $SETTINGS_FILE не найден. Пропуск."
+    fi
+
+    # Архивация всего бэкапа
+    tar -czf "$ARCHIVE_FILE" -C "$BACKUP_BASE_DIR" "$TIMESTAMP" && echo "Архив создан: $ARCHIVE_FILE"
+
+    # Можно удалить временную папку после архивации (если не нужна)
+    # rm -rf "$BACKUP_DIR"
+
+    echo "Бэкап успешно завершён."
 }
 
 IPv6=$(echo "$js_SETTING" | jq -r '.network.IPv6 // "false"')
