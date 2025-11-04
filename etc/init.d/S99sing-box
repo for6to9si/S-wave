@@ -418,7 +418,7 @@ backup_config_sing_box() {
     tar -czf "$ARCHIVE_FILE" -C "$BACKUP_BASE_DIR" "$TIMESTAMP" && echo "Архив создан: $ARCHIVE_FILE"
 
     # Можно удалить временную папку после архивации (если не нужна)
-    # rm -rf "$BACKUP_DIR"
+    rm -rf "$BACKUP_DIR"
 
     echo "Бэкап успешно завершён."
 }
