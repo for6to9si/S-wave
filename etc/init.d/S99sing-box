@@ -957,6 +957,19 @@ case $ACTION in
       start_singbox
       "$0" status
       ;;
+  firewall_up)
+      firewall_iptables
+      [ "$IPv6" = "true" ] && firewall_ip6tables
+      logger -t "$(basename "$0")" "Firewall was launched"
+      ;;
+  firewall_down)
+      del_ip_rules 4
+      del_ip_rules 6
+      chain_name=$(echo "$js_SETTING" | jq -r '.network.chain_name')
+      chain_name_output="${chain_name}"_out
+      del_iptables "${chain_name}"
+      del_iptables "${chain_name_output}"
+      ;;
   *)
       echo -e "  Команды: ${color_green}start${color_reset} | ${color_red}stop${color_reset} | ${color_yellow}restart${color_reset} | ${color_blue}backup${color_reset} | status"
       ;;
