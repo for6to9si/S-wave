@@ -80,12 +80,12 @@ opkg remove sing-box-tg-installer
 ## ⌨️ ⚙️ Основные команды управления:
 
    ```bash
-   /opt/etc/init.d/S99sing-box start           # Запуск sing-box
-   /opt/etc/init.d/S99sing-box restart         # Перезапуск sing-box
+   /opt/etc/init.d/S99sing-box start           # Запуск sing-box, если конфиг у вас был ошибкой, и sing-box у вас поэтому упал, использует restart
+   /opt/etc/init.d/S99sing-box restart         # Перезапуск sing-box, удаяляет старую таблицу маршутизации, делает полный рестарт, и программы и таблиц маршрутизации
    /opt/etc/init.d/S99sing-box fast_restart    # Быстрый перезапуск sing-box без перезапуска таблиц маршрутизации.
    /opt/etc/init.d/S99sing-box status          # Проверка статуса sing-box
    /opt/etc/init.d/S99sing-box backup          # Создание бэкапа конфигурации в папке /backups/sing-box
-   /opt/etc/init.d/S99sing-box stop            # Остановка sing-box
+   /opt/etc/init.d/S99sing-box stop            # Остановка sing-box, удаление таблицы маршрутизации
    ```
 
    > ⚠️ При неуспешном запуске проверяйте лог:
@@ -94,14 +94,21 @@ opkg remove sing-box-tg-installer
    > cat /opt/var/log/swave/swave.log
    > ```
 
+### Режим отладки
+
+   По умолчанию отключен режим отладки.  
+   Для включения отладочного вывода установите переменную `DEBUG=true`   
+   в файле [`/opt/etc/init.d/S99sing-box`](https://github.com/for6to9si/S-wave/blob/main/etc/init.d/S99sing-box#L30).
+
+
 ---
 
 
 ## 🌍 Примеры VPN-конфигураций
 
- копируем в [etc/sing-box/config](https://github.com/for6to9si/S-wave/tree/main/etc/sing-box/config) 
+ копируем в [/etc/sing-box/config](https://github.com/for6to9si/S-wave/tree/main/etc/sing-box/config) 
 
- добавлен пример настройки [hysteria2](https://github.com/for6to9si/S-wave/blob/main/etc/sing-box/configs/hy2-france.json)
+ добавлен пример конфигурационного файла [hysteria2](https://github.com/for6to9si/S-wave/blob/main/etc/sing-box/configs/hy2-france.json)
 
 ## ✅ Итог
 
