@@ -23,7 +23,7 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 # @author: for6to9si@gmail.com
-# @version: 0.0.41
+# @version: 0.0.42
 
 
 ENABLED=yes
@@ -38,15 +38,13 @@ export PATH=/opt/bin:/opt/sbin:/usr/bin:/bin:/sbin:/usr/sbin
 
 
 # Путь к JSON-файлу с настройками
-if [ ! -f /opt/etc/swave/settings.json ]; then
-    echo "Файл настроек /opt/etc/swave/settings.json не найден."
-    echo "Пожалуйста, ознакомьтесь с примером настроек: /opt/etc/swave/example.json"
+if [ ! -f /opt/etc/swave/config.json ]; then
+    echo "Файл настроек /opt/etc/swave/config.json не найден."
+    echo "Пожалуйста, ознакомьтесь с примером настроек: https://github.com/for6to9si/S-wave/wiki"
     echo "Отредактируйте его в соответствии с вашими требованиями,"
-    echo "затем переместите в нужное место командой:"
-    echo "  mv /opt/etc/swave/example.json /opt/etc/swave/settings.json"
     exit 1
 else
-    SETTING="/opt/etc/swave/settings.json"
+    SETTING="/opt/etc/swave/config.json"
 fi
 
 get_clean_json() {
@@ -371,7 +369,7 @@ backup_config_sing_box() {
     BACKUP_BASE_DIR="/opt/backups/sing-box"
     TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
     BACKUP_DIR="${BACKUP_BASE_DIR}/${TIMESTAMP}"
-    SETTINGS_FILE="/opt/etc/swave/settings.json"
+    SETTINGS_FILE="/opt/etc/swave/config.json"
     SETTINGS_BACKUP_DIR="${BACKUP_DIR}/swave"
     ARCHIVE_FILE="${BACKUP_BASE_DIR}/sing-box-backup-${TIMESTAMP}.tar.gz"
 
@@ -406,7 +404,7 @@ backup_config_sing_box() {
     # Создаём поддиректорию для настроек swave
     mkdir -p "$SETTINGS_BACKUP_DIR"
 
-    # Копируем settings.json отдельно
+    # Копируем config.json отдельно
     if [ -f "$SETTINGS_FILE" ]; then
         cp "$SETTINGS_FILE" "$SETTINGS_BACKUP_DIR/" || echo "Ошибка копирования $SETTINGS_FILE"
         echo "Файл $SETTINGS_FILE сохранён в $SETTINGS_BACKUP_DIR"
