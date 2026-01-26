@@ -1,0 +1,13 @@
+{
+    "outbounds":
+    [
+        {
+            "type": "shadowsocks",
+            "tag": "ss-german",
+            "method": "aes-256-gcm",
+            "server": "11.1.1.1.1",
+            "server_port": 46813,
+            "password": "6mXfv3CC2qMysgjsCwzJgBV0tRgbKbU="
+        }
+    ]
+}

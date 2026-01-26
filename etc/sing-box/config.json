@@ -1,0 +1,183 @@
+{
+    "log":
+    {
+        "disabled": true,
+        "level": "none",
+        "output": "/opt/var/log/sing-box/sing-box.log",
+        "timestamp": true
+    },
+    "dns":
+    {
+        "servers":
+        [
+            {
+                "tag": "cloudflare",
+                "type": "https",
+                "server": "1.1.1.1"
+            }
+        ],
+        "final": "cloudflare",
+        "strategy": "prefer_ipv4",
+        "disable_cache": false,
+        "disable_expire": false
+    },
+    "inbounds":
+    [
+        // {
+        //     "type": "mixed",
+        //     "tag": "mixed-in",
+        //     "listen": "127.0.0.1",
+        //     "listen_port": 1081,
+        //     "tcp_fast_open": false,
+        //     "sniff": true,
+        //     "sniff_override_destination": true,
+        //     "set_system_proxy": false
+        // },
+        {
+            "type": "redirect",
+            "tag": "redirect-in",
+            "listen": "::",
+            "listen_port": 60008,
+            "tcp_fast_open": false,
+            "sniff": true,
+            "sniff_override_destination": true
+        },
+        {
+            "type": "tproxy",
+            "tag": "tproxy-in",
+            "listen": "::",
+            "listen_port": 60009,
+            "tcp_fast_open": false,
+            "sniff": true,
+            "sniff_override_destination": true,
+            "network":
+            [
+                "udp",
+                "tcp"
+            ]
+        }
+        // {
+        //     "type": "tun",
+        //     "interface_name": "opkgtun0",
+        //     "address":
+        //     [
+        //         "172.19.0.1/30"
+        //     ],
+        //     "mtu": 9000,
+        //     "auto_route": false,
+        //     "strict_route": false,
+        //     "endpoint_independent_nat": true,
+        //     "sniff": false,
+        //     "stack": "gvisor",
+        //     "tag": "tun-in-singtun0"
+        // }
+    ],
+    "outbounds":
+    [
+        {
+            "type": "selector",
+            "tag": "Proxy-out",
+            "outbounds":
+            [
+                "URL-Test",			
+				"hy2-france",
+				"vless-google",
+                "vless-genman",
+                "vless-netherlands"
+            ],
+            "default": "URL-Test"
+        },
+        {
+            "type": "urltest",
+            "tag": "URL-Test",
+            "outbounds":
+            [
+                "vless-genman",
+				"vless-google",
+				"hy2-france",
+                "vless-netherlands"
+            ],
+            "url": "http://www.gstatic.com/generate_204",
+            "interval": "3m30s",
+            "tolerance": 50,
+            "idle_timeout": "30m0s",
+            "interrupt_exist_connections": false
+        },
+        {
+            "type": "direct",
+            "tag": "direct"
+        }
+    ],
+    "route":
+    {
+        "rule_set":
+        [
+            {
+                "tag": "geoip-ru",
+                "type": "remote",
+                "format": "binary",
+                "url": "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs",
+                "download_detour": "Proxy-out"
+            }
+        ],
+        "default_domain_resolver":
+        {
+            "server": "cloudflare",
+            "rewrite_ttl": 60,
+            "client_subnet": "1.1.1.1"
+        },
+        "rules":
+        [
+            {
+                "action": "sniff"
+            },
+            {
+                "protocol": "dns",
+                "port": 53,
+                "action": "hijack-dns"
+            },
+            {
+                "protocol":
+                [
+                    "quic"
+                ],
+                "action": "reject"
+            },
+            {
+                "ip_cidr":
+                [
+                    "94.100.180.201/32",
+                    "94.100.180.202/32"
+                ],
+                "domain_keyword":
+                [
+                    "mail.ru",
+                    "yandex.net",
+                    "yastatic.net",
+                    "yandex.ru",
+                    "vk.com"
+                ],
+                "domain_suffix":
+                [
+                    ".ru"
+                ],
+                "outbound": "direct"
+            }
+        ],
+        "final": "Proxy-out",
+        "auto_detect_interface": true
+    },
+    "experimental":
+    {
+        "cache_file":
+        {
+            "enabled": true
+        },
+        "clash_api":
+        {
+            "external_controller": "0.0.0.0:9090",
+            "external_ui": "ui",
+            "external_ui_download_detour": "Proxy-out"
+        }
+    }
+}

@@ -1,0 +1,32 @@
+{
+    "outbounds":
+    [
+        {
+            "type": "vless",
+            "tag": "vless-genman",
+            "server": "12.3.21.3.13",
+            "server_port": 443,
+            "uuid": "c762d232-uuid-uuif-a395-816ffdfds",
+            "flow": "xtls-rprx-vision",
+            "network": "tcp",
+			"packet_encoding": "xudp",
+            "tls":
+            {
+                "enabled": true,
+                "reality":
+                {
+                    "enabled": true,
+                    "public_key": "KyefdfMpsrXXEez0_56ss_KnsKJM6uEYA4p5-v8Qs9F8",
+                    "short_id": "c98fd1"
+                },
+                "insecure": false,
+                "server_name": "google.com",
+                "utls":
+                {
+                    "enabled": true,
+                    "fingerprint": "chrome"
+                }
+            }
+        }
+    ]
+}

@@ -8,7 +8,7 @@
   "app":
   {
     "name": "swave",
-    "log": "/opt/var/log/swave/swava.log"
+    "log": "/opt/var/log/swave/swave.log"
   },
   "network":
   {
@@ -25,8 +25,8 @@
       8080
     ],
     "port_forwarding_range":[
-      "50000-50030",
-      "1000:1099"
+      "50000:50030",
+      "1000:1002"
     ],
     "IPv6": true,
     "IPv6_exclusions":[

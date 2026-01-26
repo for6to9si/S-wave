@@ -1,0 +1,31 @@
+{
+    "outbounds":
+    [
+        {
+            "type": "vless",
+            "tag": "vless-netherlands",
+            "server": "11.22.330.446",
+            "server_port": 443,
+            "uuid": "166f068c-d29d-4570-b9d1-51880030d2a1",
+            "flow": "xtls-rprx-vision",
+            "network": "tcp",
+            "tls":
+            {
+                "enabled": true,
+                "reality":
+                {
+                    "enabled": true,
+                    "public_key": "vTYxA1-fdsfdezKs_Be_UI8-lCfdasffTxJPfL_m8jk",
+                    "short_id": "d0d29e78"
+                },
+                "insecure": false,
+                "server_name": "mygame.com",
+                "utls":
+                {
+                    "enabled": true,
+                    "fingerprint": "chrome"
+                }
+            }
+        }
+    ]
+}

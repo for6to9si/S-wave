@@ -1,0 +1,32 @@
+{
+    "outbounds":
+    [
+        {
+            "type": "vless",
+            "tag": "vless-google",
+            "server": "11.12.14.19",
+            "server_port": 443,
+            "uuid": "dfdsfsd-d63f-fdsf-a103-cfdsfaf",
+            "flow": "xtls-rprx-vision",
+            "network": "tcp",
+			"packet_encoding": "xudp",
+            "tls":
+            {
+                "enabled": true,
+                "reality":
+                {
+                    "enabled": true,
+                    "public_key": "AGT9-public_key",
+                    "short_id": "3a010d"
+                },
+                "insecure": false,
+                "server_name": "microsoft.com",
+                "utls":
+                {
+                    "enabled": true,
+                    "fingerprint": "chrome"
+                }
+            }
+        }
+    ]
+}

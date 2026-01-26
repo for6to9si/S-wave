@@ -1,0 +1,13 @@
+{
+    "outbounds":
+    [
+        {
+            "type": "shadowsocks",
+            "tag": "ss-netherlands",
+            "method": "aes-256-gcm",
+            "server": "4.5.1.23",
+            "server_port": 46702,
+            "password": "TffrGB0bbxfdsfdslMPwdIyojTz0vfG7bFRncvs="
+        }
+    ]
+}

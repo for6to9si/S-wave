@@ -1,0 +1,23 @@
+{
+    "outbounds":
+    [
+        {
+            "tag": "hy2-france",
+            "down_mbps": 0,
+            "password": "YourPassword",
+            "server": "10.10.01.01",
+            "server_port": 443,
+            "tls":
+            {
+                "alpn": "h3",
+                "certificate": "",
+                "disable_sni": false,
+                "enabled": true,
+                "insecure": false,
+                "server_name": "Urlvpn.ru"
+            },
+            "type": "hysteria2",
+            "up_mbps": 0
+        }
+    ]
+}
